@@ -1,616 +1,92 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pen Launcher</title>
-<style>
-  :root {
-    --bg: #ffffff;
-    --panel: #f4f2fb;
-    --panel-edge: #241947;
-    --ink-pen: #241947;
-    --ink-pen-dark: #100a24;
-    --nib: #c99a1e;
-    --text: #1c1830;
-    --text-dim: #837da3;
-    --btn-blue: #4d7cff;
-    --btn-blue-dark: #2f56cc;
-    --btn-green: #3fcf8e;
-    --btn-green-dark: #24a06a;
-    --btn-purple: #a55cff;
-    --btn-purple-dark: #7c34d1;
-    --btn-grey: #e5e2f0;
-    --btn-grey-dark: #cfc9e6;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
-  }
-  #app {
-    position: relative;
-    z-index: 1;
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-  #doodles {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    overflow: hidden;
-  }
-  #doodles svg {
-    position: absolute;
-    opacity: 0.16;
-  }
-  .screen { z-index: 1; }
-  .screen {
-    width: 100%;
-    max-width: 420px;
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    animation: fadeIn 0.25s ease;
-  }
-  .screen.active { display: flex; }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  /* Logo */
-  .logo-wrap {
-    display: flex;
-    align-items: center;
-    margin-bottom: 40px;
-  }
-  .logo-text-wrap {
-    position: relative;
-    display: inline-block;
-    padding-top: 30px;
-  }
-  .logo-text {
-    display: inline-block;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: 1px;
-    color: var(--ink-pen);
-    clip-path: inset(0 100% 0 0);
-  }
-  .logo-text-wrap.animate .logo-text {
-    animation: revealText 1.7s cubic-bezier(.45,0,.15,1) forwards;
-  }
-  @keyframes revealText {
-    to { clip-path: inset(0 0 0 0); }
-  }
-  .logo-text .accent { color: var(--ink-pen); }
-  .logo-text::after {
-    content: '';
-    position: absolute;
-    left: 0; right: 0; bottom: 4px;
-    height: 2px;
-    background: var(--btn-grey);
-    z-index: -1;
-  }
-  .writing-pen {
-    position: absolute;
-    top: -4px;
-    left: -6px;
-    width: 30px;
-    height: 30px;
-    transform: translateX(0) rotate(-38deg);
-    transform-origin: 4px 26px;
-    opacity: 0;
-  }
-  .writing-pen.animate {
-    animation: writePen 1.7s cubic-bezier(.45,0,.15,1) forwards;
-  }
-  @keyframes writePen {
-    0% { opacity: 1; transform: translateX(0) rotate(-38deg); }
-    92% { opacity: 1; }
-    100% { transform: translateX(var(--travel, 200px)) rotate(-38deg); opacity: 0; }
-  }
-
-  /* Buttons */
-  .menu-btn {
-    width: 100%;
-    padding: 18px 22px;
-    margin: 8px 0;
-    border-radius: 14px;
-    border: none;
-    font-size: 18px;
-    font-weight: 700;
-    color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.35);
-    transition: transform 0.06s ease;
-    text-align: left;
-  }
-  .menu-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.35); }
-  .menu-btn .sub {
-    display: block;
-    font-size: 12px;
-    font-weight: 500;
-    opacity: 0.85;
-    margin-top: 2px;
-  }
-  .menu-btn .icon { font-size: 22px; margin-left: 12px; }
-
-  .btn-blue { background: linear-gradient(180deg, var(--btn-blue), var(--btn-blue-dark)); }
-  .btn-green { background: linear-gradient(180deg, var(--btn-green), var(--btn-green-dark)); }
-  .btn-purple { background: linear-gradient(180deg, var(--btn-purple), var(--btn-purple-dark)); }
-  .btn-grey {
-    background: linear-gradient(180deg, var(--btn-grey), var(--btn-grey-dark));
-    color: var(--text-dim);
-    cursor: default;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.2);
-  }
-  .btn-grey:active { transform: none; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
-  .badge {
-    font-size: 10px;
-    font-weight: 800;
-    background: rgba(36, 25, 71, 0.1);
-    padding: 3px 8px;
-    border-radius: 999px;
-    letter-spacing: 0.5px;
-  }
-
-  .screen-title {
-    font-size: 24px;
-    font-weight: 800;
-    margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .back-btn {
-    align-self: flex-start;
-    background: none;
-    border: none;
-    color: var(--text-dim);
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    margin-bottom: 18px;
-    padding: 6px 0;
-  }
-  .back-btn:hover { color: var(--text); }
-
-  .grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-  }
-  .grid-btn {
-    border: none;
-    border-radius: 16px;
-    color: white;
-    cursor: pointer;
-    padding: 18px 14px;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.35);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    gap: 4px;
-    transition: transform 0.06s ease;
-    min-height: 92px;
-  }
-  .grid-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.35); }
-  .grid-btn .icon { font-size: 24px; }
-  .grid-btn .title { font-size: 15px; font-weight: 800; }
-  .grid-btn .sub { font-size: 11px; font-weight: 500; opacity: 0.85; }
-  .grid-btn.wide { grid-column: span 2; flex-direction: row; gap: 12px; min-height: 64px; }
-  .grid-btn.btn-grey { color: var(--text-dim); cursor: default; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
-  .grid-btn.btn-grey:active { transform: none; box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
-  .count-btn {
-    aspect-ratio: 1;
-    border-radius: 16px;
-    border: none;
-    background: linear-gradient(180deg, var(--btn-blue), var(--btn-blue-dark));
-    color: white;
-    font-size: 34px;
-    font-weight: 800;
-    cursor: pointer;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.35);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    grid-column: span 1;
-  }
-  .count-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.35); }
-  .count-btn .label { font-size: 13px; font-weight: 600; margin-top: 2px; opacity: 0.9; }
-  .count-btn.wide { grid-column: span 2; aspect-ratio: auto; padding: 22px; flex-direction: row; gap: 10px; }
-
-  /* toast */
-  #toast {
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: var(--panel-edge);
-    color: #ffffff;
-    padding: 12px 22px;
-    border-radius: 999px;
-    font-size: 14px;
-    font-weight: 600;
-    opacity: 0;
-    transition: opacity 0.25s ease, transform 0.25s ease;
-    pointer-events: none;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-    white-space: nowrap;
-  }
-  #toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-
-  /* Auth modal */
-  #auth-overlay {
-    position: fixed;
-    inset: 0;
-    background: #000000;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
-  #auth-overlay.hidden { display: none; }
-  .auth-box {
-    width: 100%;
-    max-width: 360px;
-  }
-  .auth-title {
-    color: #ffffff;
-    font-size: 26px;
-    font-weight: 800;
-    margin-bottom: 4px;
-    text-align: center;
-  }
-  .auth-subtitle {
-    color: #8a8a99;
-    font-size: 13px;
-    text-align: center;
-    margin-bottom: 26px;
-  }
-  .auth-field { margin-bottom: 14px; }
-  .auth-field label {
-    display: block;
-    color: #b8b8c4;
-    font-size: 12px;
-    font-weight: 700;
-    margin-bottom: 6px;
-    letter-spacing: 0.3px;
-  }
-  .auth-field input {
-    width: 100%;
-    background: #16161c;
-    border: 1px solid #2c2c38;
-    color: #ffffff;
-    padding: 13px 14px;
-    border-radius: 10px;
-    font-size: 15px;
-    outline: none;
-    transition: border-color 0.15s ease;
-  }
-  .auth-field input:focus { border-color: #4d7cff; }
-  .auth-field .hint {
-    font-size: 11px;
-    color: #6c6c7a;
-    margin-top: 5px;
-  }
-  .auth-row {
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-  }
-  .auth-row .auth-field { flex: 1; margin-bottom: 0; }
-  .auth-send-btn {
-    margin-top: 20px;
-    background: #4d7cff;
-    color: white;
-    border: none;
-    padding: 13px 16px;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .auth-send-btn:disabled { background: #2c2c38; color: #6c6c7a; cursor: not-allowed; }
-  .auth-error {
-    color: #ff6b6b;
-    font-size: 12px;
-    font-weight: 600;
-    margin-top: 10px;
-    min-height: 16px;
-    text-align: center;
-  }
-  .auth-submit {
-    width: 100%;
-    background: linear-gradient(180deg, var(--btn-blue), var(--btn-blue-dark));
-    color: white;
-    border: none;
-    padding: 15px;
-    border-radius: 10px;
-    font-size: 16px;
-    font-weight: 800;
-    cursor: pointer;
-    margin-top: 18px;
-    box-shadow: 0 4px 0 var(--btn-blue-dark);
-  }
-  .auth-submit:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--btn-blue-dark); }
-  .auth-submit:disabled { background: #2c2c38; box-shadow: none; color: #6c6c7a; cursor: not-allowed; }
-  #app.locked { display: none; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Game Site</title>
 </head>
 <body>
-<div id="doodles">
-  <svg viewBox="0 0 64 64" width="60" height="60" style="top:8%; left:6%; transform:rotate(-25deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#4d7cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#2f56cc"/></svg>
-  <svg viewBox="0 0 64 64" width="46" height="46" style="top:18%; right:10%; transform:rotate(35deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#a55cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#7c34d1"/></svg>
-  <svg viewBox="0 0 64 64" width="70" height="70" style="bottom:12%; left:8%; transform:rotate(60deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#f2c94c"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9a441"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#3fcf8e"/></svg>
-  <svg viewBox="0 0 64 64" width="50" height="50" style="bottom:20%; right:8%; transform:rotate(-15deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#4d7cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#2f56cc"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#ff7a59"/></svg>
-  <svg viewBox="0 0 64 64" width="40" height="40" style="top:60%; left:3%; transform:rotate(15deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#3fcf8e"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#24a06a"/></svg>
-  <svg viewBox="0 0 64 64" width="54" height="54" style="top:5%; right:32%; transform:rotate(75deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#a55cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#7c34d1"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#241947"/></svg>
-</div>
-<div id="auth-overlay">
-  <div class="auth-box">
-    <div class="auth-title">Create Account</div>
-    <div class="auth-subtitle">Sign up to start playing Pen Launcher</div>
 
-    <div class="auth-field">
-      <label for="auth-name">Name</label>
-      <input id="auth-name" type="text" maxlength="20" placeholder="Your name" autocomplete="off">
-      <div class="hint">3–20 letters</div>
-    </div>
+  <!-- 1. Load Firebase Modules -->
+  <script type="module">
+    import { initializeApp } from "https://gstatic.com";
+    import { getFirestore, doc, setDoc, getDoc } from "https://gstatic.com";
 
-    <div class="auth-row">
-      <div class="auth-field">
-        <label for="auth-email">Email</label>
-        <input id="auth-email" type="text" placeholder="yourname@gmail.com" autocomplete="off">
-        <div class="hint">Must end with @gmail.com</div>
-      </div>
-      <button class="auth-send-btn" id="auth-send-btn" onclick="sendCode()">Send Code</button>
-    </div>
+    // Your exact configuration block
+    const firebaseConfig = {
+      apiKey: "AIzaSyBHpzd6hKcz-CRne_y2ITuYa5q6c47EyN8",
+      authDomain: "penlauncher-54f16.firebaseapp.com",
+      projectId: "penlauncher-54f16",
+      storageBucket: "penlauncher-54f16.firebasestorage.app",
+      messagingSenderId: "165881830205",
+      appId: "1:165881830205:web:43a8b1a71621bc6c6c4354"
+    };
 
-    <div class="auth-field" id="auth-code-field" style="display:none;">
-      <label for="auth-code">Code</label>
-      <input id="auth-code" type="text" maxlength="6" placeholder="6-digit code" autocomplete="off">
-      <div class="hint" id="auth-code-hint">We sent a code to your email</div>
-    </div>
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-    <div class="auth-field">
-      <label for="auth-password">Password</label>
-      <input id="auth-password" type="password" placeholder="Password" autocomplete="new-password">
-    </div>
-
-    <div class="auth-field">
-      <label for="auth-confirm">Confirm Password</label>
-      <input id="auth-confirm" type="password" placeholder="Confirm password" autocomplete="new-password">
-    </div>
-
-    <div class="auth-error" id="auth-error"></div>
-
-    <button class="auth-submit" id="auth-submit-btn" onclick="createAccount()">Create Account</button>
-  </div>
-</div>
-<div id="app" class="locked">
-
-  <!-- MAIN MENU -->
-  <div class="screen active" id="screen-main">
-    <div class="logo-wrap">
-      <div class="logo-text-wrap" id="logoTextWrap">
-        <svg class="writing-pen" id="writingPen" viewBox="0 0 64 64" fill="none">
-          <path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="var(--ink-pen)" stroke="var(--ink-pen-dark)" stroke-width="2"/>
-          <path d="M44 20 L52 28" stroke="var(--nib)" stroke-width="3"/>
-          <path d="M10 60 L14 50 L18 54 Z" fill="var(--ink-pen-dark)"/>
-        </svg>
-        <div class="logo-text" id="logoText">PEN <span class="accent">LAUNCHER</span></div>
-      </div>
-    </div>
-
-    <button class="menu-btn btn-blue" onclick="showScreen('multiplayer')">
-      <span>Multiplayer<span class="sub">Requires internet</span></span>
-      <span class="icon">🌐</span>
-    </button>
-    <button class="menu-btn btn-green" onclick="showScreen('offline')">
-      <span>Offline<span class="sub">No internet needed</span></span>
-      <span class="icon">📴</span>
-    </button>
-    <button class="menu-btn btn-purple" onclick="toast('Coming soon')">
-      <span>Play With Friends<span class="sub">Invite people you know</span></span>
-      <span class="icon">🤝</span>
-    </button>
-    <button class="menu-btn btn-grey" onclick="toast('Settings — coming soon')">
-      <span>Settings<span class="sub">Coming soon</span></span>
-      <span class="badge">SOON</span>
-    </button>
-  </div>
-
-  <!-- MULTIPLAYER SCREEN -->
-  <div class="screen" id="screen-multiplayer">
-    <button class="back-btn" onclick="showScreen('main')">← Back</button>
-    <div class="screen-title">🌐 Multiplayer</div>
-    <div class="grid-2" style="grid-template-columns: 1fr 1fr 1fr;">
-      <button class="count-btn" onclick="toast('Coming soon')">2<span class="label">Players</span></button>
-      <button class="count-btn" onclick="toast('Coming soon')">3<span class="label">Players</span></button>
-      <button class="count-btn" onclick="toast('Coming soon')">4<span class="label">Players</span></button>
-    </div>
-  </div>
-
-  <!-- OFFLINE SCREEN -->
-  <div class="screen" id="screen-offline">
-    <button class="back-btn" onclick="showScreen('main')">← Back</button>
-    <div class="screen-title">📴 Play with</div>
-    <div class="grid-2">
-      <button class="grid-btn btn-blue wide" onclick="toast('Coming soon')">
-        <span class="icon">🤖</span>
-        <span class="title">Bot / Computer</span>
-      </button>
-      <button class="grid-btn btn-grey" onclick="toast('Coming soon')">
-        <span class="title">Friends</span>
-        <span class="sub">Coming soon</span>
-      </button>
-      <button class="grid-btn btn-grey" onclick="toast('Coming soon')">
-        <span class="title">Settings</span>
-        <span class="sub">Coming soon</span>
-      </button>
-    </div>
-  </div>
-
-</div>
-
-<div id="toast"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script>
-  if (window.emailjs) { try { emailjs.init({ publicKey: 'Ij6NA4OZlji_4F0sU' }); } catch(e) {} }
-</script>
-<script>
-  // ---- OPTIONAL EMAIL SETUP ----
-  // To actually send real codes to Gmail, sign up free at emailjs.com,
-  // create an Email Service + Template (with a {{code}} variable), then
-  // fill these three values in. Until you do, codes show in a toast
-  // instead so you can test the flow right now.
-  const EMAILJS_SERVICE_ID = 'service_penlauncher';
-  const EMAILJS_TEMPLATE_ID = 'template_laajp38';
-  const EMAILJS_PUBLIC_KEY = 'Ij6NA4OZlji_4F0sU';
-
-  let generatedCode = null;
-  let codeVerified = false;
-
-  function showAuthError(msg) {
-    document.getElementById('auth-error').textContent = msg;
-  }
-
-  async function sendCode() {
-    showAuthError('');
-    const name = document.getElementById('auth-name').value.trim();
-    const email = document.getElementById('auth-email').value.trim();
-
-    if (name.length < 3 || name.length > 20) {
-      showAuthError('Name must be 3–20 letters.');
-      return;
-    }
-    if (!email.toLowerCase().endsWith('@gmail.com') || email.length <= '@gmail.com'.length) {
-      showAuthError('Email must end with @gmail.com');
-      return;
-    }
-
-    generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    codeVerified = false;
-
-    const sendBtn = document.getElementById('auth-send-btn');
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Sending...';
-
-    const configured = EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID';
-    try {
-      if (configured && window.emailjs) {
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-          email: email, to_name: name, code: generatedCode
-        });
-        toast('Code sent to ' + email);
-      } else {
-        toast('Demo mode — your code is ' + generatedCode);
+    // 2. Automatically load saved text from the database for everyone
+    async function loadGameData() {
+      try {
+        const docSnap = await getDoc(doc(db, "game", "settings"));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if(data.customMessage) {
+            document.getElementById("game-announcement").innerText = data.customMessage;
+          }
+        } else {
+          document.getElementById("game-announcement").innerText = "No announcements yet.";
+        }
+      } catch (error) {
+        console.error("Error loading data:", error);
       }
-    } catch (err) {
-      console.error('EmailJS send failed:', err);
-      toast('Send failed — demo code: ' + generatedCode);
     }
+    window.addEventListener('DOMContentLoaded', loadGameData);
 
-    document.getElementById('auth-code-field').style.display = 'block';
-    document.getElementById('auth-code').value = '';
-    sendBtn.disabled = false;
-    sendBtn.textContent = 'Resend';
-  }
-
-  function createAccount() {
-    showAuthError('');
-    const name = document.getElementById('auth-name').value.trim();
-    const email = document.getElementById('auth-email').value.trim();
-    const code = document.getElementById('auth-code').value.trim();
-    const password = document.getElementById('auth-password').value;
-    const confirm = document.getElementById('auth-confirm').value;
-
-    if (name.length < 3 || name.length > 20) {
-      showAuthError('Name must be 3–20 letters.'); return;
+    // 3. Ask user for email cleanly without buttons to verify admin status
+    async function checkOwnerIdentity() {
+      const userEmail = prompt("Please enter your email to verify owner access (Players can click cancel):");
+      
+      if (userEmail === "thefallenshadow48@gmail.com") {
+        alert("Access Granted. Welcome Owner!");
+        document.getElementById("admin-controls").style.display = "block";
+      } else if (userEmail) {
+        alert("Access Denied. Standard player mode activated.");
+      }
     }
-    if (!email.toLowerCase().endsWith('@gmail.com') || email.length <= '@gmail.com'.length) {
-      showAuthError('Email must end with @gmail.com'); return;
-    }
-    if (generatedCode === null) {
-      showAuthError('Click "Send Code" first.'); return;
-    }
-    if (code !== generatedCode) {
-      showAuthError('Incorrect code. Check your email and try again.'); return;
-    }
-    if (password.length < 6) {
-      showAuthError('Password must be at least 6 characters.'); return;
-    }
-    if (password !== confirm) {
-      showAuthError('Passwords do not match.'); return;
-    }
+    window.addEventListener('load', checkOwnerIdentity);
 
-    localStorage.setItem('penLauncherUser', JSON.stringify({ name, email }));
-    document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('app').classList.remove('locked');
-  }
-
-  function checkExistingLogin() {
-    const saved = localStorage.getItem('penLauncherUser');
-    if (saved) {
-      document.getElementById('auth-overlay').classList.add('hidden');
-      document.getElementById('app').classList.remove('locked');
-      return true;
+    // 4. Save your changes permanently to the cloud when you click Save
+    window.saveAdminChanges = async function() {
+      const newText = document.getElementById("admin-input").value;
+      
+      try {
+        await setDoc(doc(db, "game", "settings"), {
+          customMessage: newText
+        });
+        alert("Saved successfully! Refresh the page to see it updated.");
+      } catch (e) {
+        console.error("Error saving data: ", e);
+        alert("Failed to save changes.");
+      }
     }
-    return false;
-  }
+  </script>
 
-  window.addEventListener('DOMContentLoaded', () => {
-    checkExistingLogin();
+  <!-- Hidden Admin Panel Layout (Only pops up if you pass the email prompt) -->
+  <div id="admin-controls" style="display: none; background: #1a1a1a; padding: 20px; border: 2px solid #ff4444; color: white; margin: 15px 0; font-family: sans-serif;">
+    <h3>👑 Owner Panel (thefallenshadow48@gmail.com)</h3>
+    <label>Update Website Text Globally:</label><br><br>
+    <input type="text" id="admin-input" placeholder="Type updated game messages here..." style="padding: 8px; width: 300px;"><br><br>
+    <button onclick="saveAdminChanges()" style="background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px;">Save Globally</button>
+  </div>
 
-    const wrap = document.getElementById('logoTextWrap');
-    const text = document.getElementById('logoText');
-    const pen = document.getElementById('writingPen');
-    const travel = text.offsetWidth - 6;
-    pen.style.setProperty('--travel', travel + 'px');
-    requestAnimationFrame(() => {
-      wrap.classList.add('animate');
-      pen.classList.add('animate');
-    });
-  });
+  <!-- Main Website Interface for regular players -->
+  <div style="padding: 20px; font-family: sans-serif;">
+    <h2>Welcome to the Game Website</h2>
+    <hr>
+    <h3>Latest Live Update:</h3>
+    <p id="game-announcement" style="font-size: 1.2em; color: #333; font-style: italic;">Loading data from cloud database...</p>
+  </div>
 
-  function showScreen(name) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('screen-' + name).classList.add('active');
-  }
-
-  let toastTimer;
-  function toast(msg) {
-    const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
-  }
-</script>
 </body>
 </html>
