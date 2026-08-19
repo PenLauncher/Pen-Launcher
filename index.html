@@ -4,19 +4,63 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Game Site</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
+    .hidden { display: none !important; }
+    
+    /* Registration Prompt Box Design */
+    #reg-prompt {
+      background: white; padding: 30px; border-radius: 8px; max-width: 400px;
+      margin: 50px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center;
+    }
+    #reg-prompt input { width: 80%; padding: 10px; margin: 15px 0; border: 1px solid #ccc; border-radius: 4px; }
+    #reg-prompt button { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    
+    /* Admin Panel Layout */
+    #admin-controls { background: #1a1a1a; padding: 20px; border: 2px solid #ff4444; color: white; margin: 15px 0; border-radius: 6px; }
+    #admin-input { padding: 8px; width: 300px; margin-bottom: 10px; }
+    .btn-save { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+    
+    /* Game Content Window */
+    #game-interface { background: white; padding: 20px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+  </style>
 </head>
 <body>
 
-  <!-- 1. Load Firebase Modules -->
+  <!-- STEP A: First-Time User Registration Window -->
+  <div id="reg-prompt" class="hidden">
+    <h3>🎮 Welcome to the Game</h3>
+    <p>Please register your email to start playing and sync your game profile data:</p>
+    <input type="email" id="user-email-input" placeholder="Enter your email address...">
+    <br>
+    <button onclick="registerUser()">Submit & Play</button>
+  </div>
+
+  <!-- STEP B: Hidden Admin Dashboard (Strictly for thefallenshadow48@gmail.com) -->
+  <div id="admin-controls" class="hidden">
+    <h3>👑 Game Master System (Owner Panel Active)</h3>
+    <label>Update Live Game Messages Globally:</label><br><br>
+    <input type="text" id="admin-input" placeholder="Type global update texts here..."><br>
+    <button onclick="saveAdminChanges()" class="btn-save">Save Globally</button>
+  </div>
+
+  <!-- STEP C: Main Interface for Regular Active Players -->
+  <div id="game-interface" class="hidden">
+    <h2>Welcome to the Game Website</h2>
+    <hr>
+    <h3>Latest Live Update:</h3>
+    <p id="game-announcement" style="font-size: 1.2em; color: #333; font-style: italic;">Syncing with game data cloud...</p>
+    <p style="color: #666; font-size: 0.9em;">Logged in user profile matches database status.</p>
+  </div>
+
+  <!-- 1. Execute Firebase Logic -->
   <script type="module">
-    // 💡 FIXED LINKS BELOW (We added the full file locations so it won't crash)
     import { initializeApp } from "https://gstatic.com";
     import { getFirestore, doc, setDoc, getDoc } from "https://gstatic.com";
 
-    // Your exact configuration block
     const firebaseConfig = {
       apiKey: "AIzaSyBHpzd6hKcz-CRne_y2ITuYa5q6c47EyN8",
-      authDomain: "penlauncher-54f16.firebaseapp.com",
+      authDomain: "://firebaseapp.com",
       projectId: "penlauncher-54f16",
       storageBucket: "penlauncher-54f16.firebasestorage.app",
       messagingSenderId: "165881830205",
@@ -26,38 +70,55 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // 2. Automatically load saved text from the database for everyone
-    async function loadGameData() {
+    // 2. Main Page Check: New or Returning?
+    async function initUserSession() {
+      let savedEmail = localStorage.getItem("playerGameEmail");
+
+      if (!savedEmail) {
+        document.getElementById("reg-prompt").classList.remove("hidden");
+      } else {
+        document.getElementById("game-interface").classList.remove("hidden");
+        
+        if (savedEmail.trim().toLowerCase() === "thefallenshadow48@gmail.com") {
+          document.getElementById("admin-controls").classList.remove("hidden");
+        }
+        
+        loadGlobalGameData();
+      }
+    }
+    window.addEventListener('DOMContentLoaded', initUserSession);
+
+    // 3. User clicks Register button
+    window.registerUser = function() {
+      const emailInput = document.getElementById("user-email-input").value;
+      
+      if (!emailInput || !emailInput.includes("@")) {
+        alert("Please enter a valid email address structure!");
+        return;
+      }
+
+      localStorage.setItem("playerGameEmail", emailInput.trim().toLowerCase());
+      location.reload();
+    }
+
+    // 4. Download Active Server Variables
+    async function loadGlobalGameData() {
       try {
         const docSnap = await getDoc(doc(db, "game", "settings"));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if(data.customMessage) {
+          if (data.customMessage) {
             document.getElementById("game-announcement").innerText = data.customMessage;
           }
         } else {
-          document.getElementById("game-announcement").innerText = "No announcements yet.";
+          document.getElementById("game-announcement").innerText = "No server announcements active.";
         }
       } catch (error) {
-        console.error("Error loading data:", error);
+        console.error("Error connecting to data paths:", error);
       }
     }
-    window.addEventListener('DOMContentLoaded', loadGameData);
 
-    // 3. Ask user for email cleanly without buttons to verify admin status
-    async function checkOwnerIdentity() {
-      const userEmail = prompt("Please enter your email to verify owner access (Players can click cancel):");
-      
-      if (userEmail === "thefallenshadow48@gmail.com") {
-        alert("Access Granted. Welcome Owner!");
-        document.getElementById("admin-controls").style.display = "block";
-      } else if (userEmail) {
-        alert("Access Denied. Standard player mode activated.");
-      }
-    }
-    window.addEventListener('load', checkOwnerIdentity);
-
-    // 4. Save your changes permanently to the cloud when you click Save
+    // 5. Admin clicks Save Globally
     window.saveAdminChanges = async function() {
       const newText = document.getElementById("admin-input").value;
       
@@ -65,29 +126,14 @@
         await setDoc(doc(db, "game", "settings"), {
           customMessage: newText
         });
-        alert("Saved successfully! Refresh the page to see it updated.");
+        alert("Changes saved to game data matrix! Reloading layout.");
+        location.reload();
       } catch (e) {
-        console.error("Error saving data: ", e);
-        alert("Failed to save changes.");
+        console.error("Cloud Write Fault: ", e);
+        alert("Database write error. Check security configs.");
       }
     }
   </script>
-
-  <!-- Hidden Admin Panel Layout (Only pops up if you pass the email prompt) -->
-  <div id="admin-controls" style="display: none; background: #1a1a1a; padding: 20px; border: 2px solid #ff4444; color: white; margin: 15px 0; font-family: sans-serif;">
-    <h3>👑 Owner Panel (thefallenshadow48@gmail.com)</h3>
-    <label>Update Website Text Globally:</label><br><br>
-    <input type="text" id="admin-input" placeholder="Type updated game messages here..." style="padding: 8px; width: 300px;"><br><br>
-    <button onclick="saveAdminChanges()" style="background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px;">Save Globally</button>
-  </div>
-
-  <!-- Main Website Interface for regular players -->
-  <div style="padding: 20px; font-family: sans-serif;">
-    <h2>Welcome to the Game Website</h2>
-    <hr>
-    <h3>Latest Live Update:</h3>
-    <p id="game-announcement" style="font-size: 1.2em; color: #333; font-style: italic;">Loading data from cloud database...</p>
-  </div>
 
 </body>
 </html>
