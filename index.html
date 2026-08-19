@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Game Site</title>
+  
+  <!-- 💡 Load Firebase the easy way using standard script tags -->
+  <script src="https://gstatic.com"></script>
+  <script src="https://gstatic.com"></script>
+
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
     .hidden { display: none !important; }
@@ -53,11 +58,8 @@
     <p style="color: #666; font-size: 0.9em;">Logged in user profile matches database status.</p>
   </div>
 
-  <!-- 1. Execute Firebase Logic -->
-  <script type="module">
-    import { initializeApp } from "https://gstatic.com";
-    import { getFirestore, doc, setDoc, getDoc } from "https://gstatic.com";
-
+  <script>
+    // Your exact configuration block
     const firebaseConfig = {
       apiKey: "AIzaSyBHpzd6hKcz-CRne_y2ITuYa5q6c47EyN8",
       authDomain: "://firebaseapp.com",
@@ -67,11 +69,12 @@
       appId: "1:165881830205:web:43a8b1a71621bc6c6c4354"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
     // 2. Main Page Check: New or Returning?
-    async function initUserSession() {
+    function initUserSession() {
       let savedEmail = localStorage.getItem("playerGameEmail");
 
       if (!savedEmail) {
@@ -102,10 +105,9 @@
     }
 
     // 4. Download Active Server Variables
-    async function loadGlobalGameData() {
-      try {
-        const docSnap = await getDoc(doc(db, "game", "settings"));
-        if (docSnap.exists()) {
+    function loadGlobalGameData() {
+      db.collection("game").doc("settings").get().then((docSnap) => {
+        if (docSnap.exists) {
           const data = docSnap.data();
           if (data.customMessage) {
             document.getElementById("game-announcement").innerText = data.customMessage;
@@ -113,25 +115,24 @@
         } else {
           document.getElementById("game-announcement").innerText = "No server announcements active.";
         }
-      } catch (error) {
+      }).catch((error) => {
         console.error("Error connecting to data paths:", error);
-      }
+      });
     }
 
     // 5. Admin clicks Save Globally
-    window.saveAdminChanges = async function() {
+    window.saveAdminChanges = function() {
       const newText = document.getElementById("admin-input").value;
       
-      try {
-        await setDoc(doc(db, "game", "settings"), {
-          customMessage: newText
-        });
+      db.collection("game").doc("settings").set({
+        customMessage: newText
+      }).then(() => {
         alert("Changes saved to game data matrix! Reloading layout.");
         location.reload();
-      } catch (e) {
+      }).catch((e) => {
         console.error("Cloud Write Fault: ", e);
         alert("Database write error. Check security configs.");
-      }
+      });
     }
   </script>
 
