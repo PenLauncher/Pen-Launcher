@@ -211,6 +211,7 @@
       <div class="auth-field">
         <label for="login-username">Username</label>
         <input id="login-username" type="text" placeholder="Your username" autocomplete="off">
+        <div class="hint" id="login-username-hint" style="display:none;">Forgot it? Leave blank and use email only.</div>
       </div>
 
       <div id="login-password-block">
@@ -425,7 +426,15 @@
   function switchLoginMethod(method){
     document.getElementById('login-password-block').style.display = method==='password' ? 'block' : 'none';
     document.getElementById('login-email-block').style.display = method==='email' ? 'block' : 'none';
+    document.getElementById('login-username-hint').style.display = method==='email' ? 'block' : 'none';
     showLoginError(''); showLoginInfo('');
+  }
+
+  async function findUserByUsername(username){
+    const lower=username.toLowerCase();
+    let snap=await db.collection('users').where('nameLower','==',lower).limit(1).get();
+    if(snap.empty){ snap=await db.collection('users').where('name','==',username).limit(1).get(); }
+    return snap;
   }
 
   async function sendCode(){
@@ -436,7 +445,7 @@
     if(!email.endsWith('@gmail.com') || email.length<='@gmail.com'.length){ showAuthError('Email must end with @gmail.com'); return; }
     const sendBtn=document.getElementById('auth-send-btn');
     sendBtn.disabled=true; sendBtn.textContent='Checking...';
-    const usernameTaken = await db.collection('users').where('name','==',username).limit(1).get();
+    const usernameTaken = await findUserByUsername(username);
     if(!usernameTaken.empty){ showAuthError('That username is already taken.'); sendBtn.disabled=false; sendBtn.textContent='Send Code'; return; }
     const emailTaken = await db.collection('users').where('email','==',email).limit(1).get();
     if(!emailTaken.empty){ showAuthError('An account with this email already exists — try logging in instead.'); sendBtn.disabled=false; sendBtn.textContent='Send Code'; return; }
@@ -464,7 +473,7 @@
     if(code!==generatedCode){ showAuthError('Incorrect code.'); return; }
     if(password.length<6){ showAuthError('Password must be at least 6 characters.'); return; }
     if(password!==confirm){ showAuthError('Passwords do not match.'); return; }
-    const userData={ name:username, email, password, createdAt: Date.now(), wins:0, losses:0 };
+    const userData={ name:username, nameLower:username.toLowerCase(), email, password, createdAt: Date.now(), wins:0, losses:0 };
     const ref=await db.collection('users').add(userData);
     userData.id=ref.id;
     logInUser(userData);
@@ -476,7 +485,7 @@
     const password=document.getElementById('login-password').value;
     if(!username){ showLoginError('Enter your username.'); return; }
     if(!password){ showLoginError('Enter your password.'); return; }
-    const snap=await db.collection('users').where('name','==',username).limit(1).get();
+    const snap=await findUserByUsername(username);
     if(snap.empty){ showLoginError('Username not found.'); return; }
     const userDoc=snap.docs[0].data();
     userDoc.id=snap.docs[0].id;
@@ -484,22 +493,30 @@
     logInUser(userDoc);
   }
 
+  let pendingLoginUser=null;
   async function sendLoginCode(){
     showLoginError('');
     const username=document.getElementById('login-username').value.trim();
     const email=document.getElementById('login-email').value.trim().toLowerCase();
-    if(!username){ showLoginError('Enter your username first.'); return; }
     if(!email){ showLoginError('Enter the email on your account.'); return; }
     const btn=document.getElementById('login-send-btn');
     btn.disabled=true; btn.textContent='Checking...';
-    const snap=await db.collection('users').where('name','==',username).limit(1).get();
-    if(snap.empty){ showLoginError('Username not found.'); btn.disabled=false; btn.textContent='Send Code'; return; }
-    const userDoc=snap.docs[0].data();
-    if(userDoc.email.toLowerCase()!==email){ showLoginError('That email does not match this username.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+    let userDoc, userId;
+    if(username){
+      const snap=await findUserByUsername(username);
+      if(snap.empty){ showLoginError('Username not found.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+      userDoc=snap.docs[0].data(); userId=snap.docs[0].id;
+      if(userDoc.email.toLowerCase()!==email){ showLoginError('That email does not match this username.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+    } else {
+      const snap=await db.collection('users').where('email','==',email).limit(1).get();
+      if(snap.empty){ showLoginError('No account found with that email.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+      userDoc=snap.docs[0].data(); userId=snap.docs[0].id;
+    }
+    pendingLoginUser={ ...userDoc, id:userId };
     loginGeneratedCode=Math.floor(100000+Math.random()*900000).toString();
     btn.textContent='Sending...';
     try{
-      if(window.emailjs){ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { email, to_name:username, code:loginGeneratedCode }); toast('Code sent to '+email); }
+      if(window.emailjs){ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { email, to_name:userDoc.name, code:loginGeneratedCode }); toast('Code sent to '+email); }
       else { toast('Demo mode — your code is '+loginGeneratedCode); }
     }catch(err){ console.error(err); toast('Send failed — demo code: '+loginGeneratedCode); }
     document.getElementById('login-code-field').style.display='block';
@@ -510,15 +527,10 @@
 
   async function verifyLoginCode(){
     showLoginError('');
-    const username=document.getElementById('login-username').value.trim();
     const code=document.getElementById('login-code').value.trim();
-    if(loginGeneratedCode===null){ showLoginError('Click "Send Code" first.'); return; }
+    if(loginGeneratedCode===null || !pendingLoginUser){ showLoginError('Click "Send Code" first.'); return; }
     if(code!==loginGeneratedCode){ showLoginError('Incorrect code.'); return; }
-    const snap=await db.collection('users').where('name','==',username).limit(1).get();
-    if(snap.empty){ showLoginError('Username not found.'); return; }
-    const userDoc=snap.docs[0].data();
-    userDoc.id=snap.docs[0].id;
-    logInUser(userDoc);
+    logInUser(pendingLoginUser);
   }
 
   function logInUser(userData){
