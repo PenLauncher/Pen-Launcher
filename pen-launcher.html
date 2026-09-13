@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pen Launcher</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f4f2fb; --panel-edge: #241947;
+    --ink-pen: #241947; --ink-pen-dark: #100a24; --nib: #c99a1e;
+    --text: #1c1830; --text-dim: #837da3;
+    --btn-blue: #4d7cff; --btn-blue-dark: #2f56cc;
+    --btn-green: #3fcf8e; --btn-green-dark: #24a06a;
+    --btn-purple: #a55cff; --btn-purple-dark: #7c34d1;
+    --btn-grey: #e5e2f0; --btn-grey-dark: #cfc9e6;
+    --admin: #1c1830; --admin-dark: #000000;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
+  #app { position:relative; z-index:1; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; overflow-y:auto; }
+  #app.locked { display:none; }
+  #doodles { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  #doodles svg { position:absolute; opacity:0.16; }
+  .screen { width:100%; max-width:460px; display:none; flex-direction:column; align-items:center; animation:fadeIn .25s ease; margin:auto; }
+  .screen.active { display:flex; }
+  @keyframes fadeIn { from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+  #corner-status { position:fixed; top:14px; left:14px; z-index:50; font-size:13px; font-weight:800; display:flex; align-items:center; gap:10px; background:var(--panel); padding:6px 12px; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,.1); }
+  #owner-tag { background:linear-gradient(180deg,#ffd23f,#c99a1e); color:#241947; padding:3px 9px; border-radius:999px; font-size:11px; display:none; }
+
+  .logo-wrap { display:flex; align-items:center; margin-bottom:20px; margin-top: 30px;}
+  .logo-text-wrap { position:relative; display:inline-block; padding-top:30px; }
+  .logo-text { display:inline-block; font-size:30px; font-weight:800; letter-spacing:1px; color:var(--ink-pen); clip-path:inset(0 100% 0 0); }
+  .logo-text-wrap.animate .logo-text { animation:revealText 1.7s cubic-bezier(.45,0,.15,1) forwards; }
+  @keyframes revealText { to{ clip-path:inset(0 0 0 0);} }
+  .logo-text .accent { color:var(--ink-pen); }
+  .writing-pen { position:absolute; top:-4px; left:-6px; width:30px; height:30px; transform:translateX(0) rotate(-38deg); transform-origin:4px 26px; opacity:0; }
+  .writing-pen.animate { animation:writePen 1.7s cubic-bezier(.45,0,.15,1) forwards; }
+  @keyframes writePen { 0%{opacity:1; transform:translateX(0) rotate(-38deg);} 92%{opacity:1;} 100%{transform:translateX(var(--travel,200px)) rotate(-38deg); opacity:1;} }
+
+  .announcement { background:var(--panel); border:1px solid var(--btn-grey-dark); border-radius:12px; padding:10px 16px; font-size:13px; color:var(--text-dim); margin-bottom:18px; text-align:center; max-width:380px; display:none; }
+  .announcement.show { display:block; }
+
+  .menu-btn { width:100%; padding:18px 22px; margin:8px 0; border-radius:14px; border:none; font-size:18px; font-weight:700; color:white; cursor:pointer; display:flex; align-items:center; justify-content:space-between; box-shadow:0 4px 0 rgba(0,0,0,0.35); transition:transform .06s ease; text-align:left; }
+  .menu-btn:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.35); }
+  .menu-btn .sub { display:block; font-size:12px; font-weight:500; opacity:.85; margin-top:2px; }
+  .menu-btn .icon { font-size:22px; margin-left:12px; }
+  .btn-blue { background:linear-gradient(180deg,var(--btn-blue),var(--btn-blue-dark)); }
+  .btn-green { background:linear-gradient(180deg,var(--btn-green),var(--btn-green-dark)); }
+  .btn-purple { background:linear-gradient(180deg,var(--btn-purple),var(--btn-purple-dark)); }
+  .btn-grey { background:linear-gradient(180deg,var(--btn-grey),var(--btn-grey-dark)); color:var(--text-dim); cursor:default; box-shadow:0 4px 0 rgba(0,0,0,0.2); }
+  .btn-grey:active { transform:none; box-shadow:0 4px 0 rgba(0,0,0,0.2); }
+  .btn-admin { background:linear-gradient(180deg,var(--admin),var(--admin-dark)); }
+  .badge { font-size:10px; font-weight:800; background:rgba(36,25,71,0.1); padding:3px 8px; border-radius:999px; letter-spacing:.5px; }
+
+  .screen-title { font-size:24px; font-weight:800; margin-bottom:24px; display:flex; align-items:center; gap:8px; }
+  .back-btn { align-self:flex-start; background:none; border:none; color:var(--text-dim); font-size:15px; font-weight:700; cursor:pointer; margin-bottom:18px; padding:6px 0; }
+  .back-btn:hover { color:var(--text); }
+
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
+  .item-btn { aspect-ratio:1; border-radius:16px; border:none; background:linear-gradient(180deg,var(--btn-blue),var(--btn-blue-dark)); color:white; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.35); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  .item-btn:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.35); }
+  .item-btn .item-icon { font-size:30px; font-weight:800; }
+  .item-btn .item-label { font-size:13px; font-weight:600; opacity:.9; }
+  .item-btn.grey { background:linear-gradient(180deg,var(--btn-grey),var(--btn-grey-dark)); color:var(--text-dim); }
+
+  #toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--panel-edge); color:#fff; padding:12px 22px; border-radius:999px; font-size:14px; font-weight:600; opacity:0; transition:opacity .25s ease, transform .25s ease; pointer-events:none; box-shadow:0 6px 20px rgba(0,0,0,0.4); white-space:nowrap; z-index:200; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #auth-overlay { position:fixed; inset:0; background:#000; z-index:100; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
+  #auth-overlay.hidden { display:none; }
+  .auth-box { width:100%; max-width:360px; padding:20px 0; }
+  .auth-title { color:#fff; font-size:26px; font-weight:800; margin-bottom:4px; text-align:center; }
+  .auth-subtitle { color:#8a8a99; font-size:13px; text-align:center; margin-bottom:26px; }
+  .auth-field { margin-bottom:14px; }
+  .auth-field label { display:block; color:#b8b8c4; font-size:12px; font-weight:700; margin-bottom:6px; letter-spacing:.3px; }
+  .auth-field input { width:100%; background:#16161c; border:1px solid #2c2c38; color:#fff; padding:13px 14px; border-radius:10px; font-size:15px; outline:none; }
+  .auth-field input:focus { border-color:#4d7cff; }
+  .auth-field .hint { font-size:11px; color:#6c6c7a; margin-top:5px; }
+  .auth-row { display:flex; gap:8px; align-items:flex-start; }
+  .auth-row .auth-field { flex:1; margin-bottom:0; }
+  .auth-send-btn { margin-top:20px; background:#4d7cff; color:white; border:none; padding:13px 16px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; }
+  .auth-send-btn:disabled { background:#2c2c38; color:#6c6c7a; cursor:not-allowed; }
+  .auth-error { color:#ff6b6b; font-size:12px; font-weight:600; margin-top:10px; min-height:16px; text-align:center; }
+  .auth-info { color:#7cf0a0; font-size:12px; font-weight:600; margin-top:10px; min-height:16px; text-align:center; }
+  .auth-submit { width:100%; background:linear-gradient(180deg,var(--btn-blue),var(--btn-blue-dark)); color:white; border:none; padding:15px; border-radius:10px; font-size:16px; font-weight:800; cursor:pointer; margin-top:18px; box-shadow:0 4px 0 var(--btn-blue-dark); }
+
+  .admin-section { width:100%; background:var(--panel); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .admin-section h3 { margin:0 0 10px 0; font-size:15px; }
+  .admin-field { margin-bottom:10px; }
+  .admin-field label { display:block; font-size:12px; font-weight:700; color:var(--text-dim); margin-bottom:4px; }
+  .admin-field input, .admin-field select, .admin-field textarea { width:100%; padding:10px; border-radius:8px; border:1px solid var(--btn-grey-dark); font-size:14px; font-family:inherit; }
+  .admin-btn-row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .admin-btn-row button { flex:1; padding:9px; border-radius:8px; border:none; font-weight:700; cursor:pointer; font-size:12px; min-width:70px; }
+  .admin-save { background:var(--btn-blue); color:white; }
+  .admin-edit { background:var(--btn-purple); color:white; }
+  .admin-delete { background:#ff6b6b; color:white; }
+  .admin-manage { background:var(--admin); color:white; }
+  .admin-add { background:var(--btn-green); color:white; width:100%; padding:12px; border-radius:8px; border:none; font-weight:800; cursor:pointer; margin-top:6px; }
+  .admin-card { background:white; border:1px solid var(--btn-grey-dark); border-radius:10px; padding:10px; margin-bottom:8px; }
+  .admin-edit-form { background:#fbfaff; border:1px dashed var(--btn-grey-dark); border-radius:8px; padding:10px; margin-top:8px; }
+  .admin-user-row { display:flex; justify-content:space-between; font-size:13px; padding:8px 0; border-bottom:1px solid var(--btn-grey-dark); gap:6px; }
+  .admin-user-row:last-child { border-bottom:none; }
+  .checkbox-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .checkbox-row label { margin:0; font-size:13px; color:var(--text); font-weight:600; }
+
+  .pen-input { width:100%; padding:14px; border-radius:10px; border:1px solid var(--btn-grey-dark); font-size:16px; margin-bottom:10px; }
+  .duel-players-bar { display:flex; justify-content:space-around; width:100%; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+  .pen-row { display:flex; justify-content:space-around; width:100%; gap:6px; padding:8px; background:var(--panel); border-radius:12px; margin:6px 0; flex-wrap:wrap; }
+  .pen-slot { text-align:center; font-size:11px; flex:1; min-width:60px; }
+  .pen-slot input { width:100%; padding:6px 4px; border-radius:6px; border:1px solid var(--btn-grey-dark); font-size:11px; text-align:center; }
+  .pen-slot .pen-name-label { font-weight:700; }
+  .pen-slot .pen-name-label.dead { text-decoration:line-through; color:#ff6b6b; opacity:0.6; }
+  .pen-slot .pen-owner { font-size:9px; color:var(--text-dim); margin-top:2px; }
+  .pen-error { color:#ff6b6b; font-size:10px; }
+  #duel-timer { font-weight:800; font-size:15px; margin-bottom:8px; }
+  #duel-turn-label { font-size:14px; color:var(--text-dim); margin-bottom:10px; text-align:center; }
+  #duel-canvas { border-radius:14px; border:2px solid var(--panel-edge); box-shadow:0 4px 16px rgba(0,0,0,.15); touch-action:none; }
+  #duel-admin-controls { width:100%; background:#fff3e0; border:1px solid #f2c94c; border-radius:10px; padding:10px; margin-top:14px; display:none; font-size:12px; }
+  #duel-admin-controls button { margin:2px; padding:5px 8px; border-radius:6px; border:none; background:var(--btn-blue); color:white; font-size:11px; cursor:pointer; }
+  .lobby-name-row { font-size:14px; padding:6px 0; }
+  .lobby-count-badge { display:inline-block; background:linear-gradient(180deg,var(--btn-blue),var(--btn-blue-dark)); color:white; font-weight:800; font-size:16px; padding:10px 22px; border-radius:999px; box-shadow:0 4px 0 var(--btn-blue-dark); margin-bottom:10px; }
+  .lobby-progress { width:100%; max-width:280px; height:10px; background:var(--btn-grey); border-radius:999px; overflow:hidden; margin:0 auto 16px; }
+  .lobby-progress-fill { height:100%; background:linear-gradient(90deg,var(--btn-blue),var(--btn-green)); transition:width 0.4s ease; }
+  .size-count-badge { display:block; font-size:10px; font-weight:700; color:rgba(255,255,255,0.85); background:rgba(0,0,0,0.15); padding:2px 8px; border-radius:999px; margin-top:2px; }
+</style>
+</head>
+<body>
+<div id="doodles">
+  <svg viewBox="0 0 64 64" width="60" height="60" style="top:8%; left:6%; transform:rotate(-25deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#4d7cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#2f56cc"/></svg>
+  <svg viewBox="0 0 64 64" width="46" height="46" style="top:18%; right:10%; transform:rotate(35deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#a55cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#7c34d1"/></svg>
+  <svg viewBox="0 0 64 64" width="70" height="70" style="bottom:12%; left:8%; transform:rotate(60deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#f2c94c"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9a441"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#3fcf8e"/></svg>
+  <svg viewBox="0 0 64 64" width="50" height="50" style="bottom:20%; right:8%; transform:rotate(-15deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#4d7cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#2f56cc"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#ff7a59"/></svg>
+  <svg viewBox="0 0 64 64" width="40" height="40" style="top:60%; left:3%; transform:rotate(15deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#3fcf8e"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#24a06a"/></svg>
+  <svg viewBox="0 0 64 64" width="54" height="54" style="top:5%; right:32%; transform:rotate(75deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#a55cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#7c34d1"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#241947"/></svg>
+  <svg viewBox="0 0 64 64" width="44" height="44" style="top:35%; left:14%; transform:rotate(-40deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#ff7a59"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#d9583d"/></svg>
+  <svg viewBox="0 0 64 64" width="58" height="58" style="top:42%; right:5%; transform:rotate(20deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#3fcf8e"/><path d="M26 48 L38 48 L32 60 Z" fill="#24a06a"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#4d7cff"/></svg>
+  <svg viewBox="0 0 64 64" width="36" height="36" style="top:2%; left:42%; transform:rotate(50deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#f2c94c"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#c99a1e"/></svg>
+  <svg viewBox="0 0 64 64" width="48" height="48" style="bottom:5%; right:38%; transform:rotate(-60deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#ff7a59"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9583d"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#a55cff"/></svg>
+  <svg viewBox="0 0 64 64" width="42" height="42" style="bottom:35%; left:44%; transform:rotate(10deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#4d7cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#2f56cc"/></svg>
+  <svg viewBox="0 0 64 64" width="52" height="52" style="bottom:45%; right:20%; transform:rotate(-30deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#a55cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#7c34d1"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#3fcf8e"/></svg>
+  <svg viewBox="0 0 64 64" width="38" height="38" style="top:70%; right:14%; transform:rotate(45deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#f2c94c"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#c99a1e"/></svg>
+  <svg viewBox="0 0 64 64" width="46" height="46" style="top:80%; left:22%; transform:rotate(-20deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#ff7a59"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9583d"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#241947"/></svg>
+  <svg viewBox="0 0 64 64" width="34" height="34" style="top:25%; left:48%; transform:rotate(80deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#3fcf8e"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#24a06a"/></svg>
+  <svg viewBox="0 0 64 64" width="56" height="56" style="bottom:2%; left:35%; transform:rotate(-45deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#4d7cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#2f56cc"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#f2c94c"/></svg>
+  <svg viewBox="0 0 64 64" width="40" height="40" style="top:50%; left:80%; transform:rotate(30deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#a55cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#7c34d1"/></svg>
+  <svg viewBox="0 0 64 64" width="32" height="32" style="top:12%; left:24%; transform:rotate(-70deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#3fcf8e"/><path d="M26 48 L38 48 L32 60 Z" fill="#24a06a"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#ff7a59"/></svg>
+  <svg viewBox="0 0 64 64" width="44" height="44" style="top:30%; right:44%; transform:rotate(15deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#ff7a59"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#d9583d"/></svg>
+  <svg viewBox="0 0 64 64" width="50" height="50" style="top:65%; left:60%; transform:rotate(-25deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#f2c94c"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9a441"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#4d7cff"/></svg>
+  <svg viewBox="0 0 64 64" width="36" height="36" style="bottom:28%; right:2%; transform:rotate(55deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#4d7cff"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#2f56cc"/></svg>
+  <svg viewBox="0 0 64 64" width="48" height="48" style="bottom:55%; left:18%; transform:rotate(-10deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#a55cff"/><path d="M26 48 L38 48 L32 60 Z" fill="#7c34d1"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#3fcf8e"/></svg>
+  <svg viewBox="0 0 64 64" width="30" height="30" style="top:90%; right:28%; transform:rotate(40deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#3fcf8e"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#24a06a"/></svg>
+  <svg viewBox="0 0 64 64" width="46" height="46" style="top:20%; left:70%; transform:rotate(-55deg);"><rect x="26" y="8" width="12" height="40" rx="2" fill="#ff7a59"/><path d="M26 48 L38 48 L32 60 Z" fill="#d9583d"/><rect x="26" y="8" width="12" height="8" fill="#e8e8e8"/><rect x="26" y="4" width="12" height="6" rx="2" fill="#241947"/></svg>
+  <svg viewBox="0 0 64 64" width="38" height="38" style="bottom:65%; right:50%; transform:rotate(65deg);"><path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="#f2c94c"/><path d="M44 20 L52 28" stroke="#fff" stroke-width="3"/><path d="M10 60 L14 50 L18 54 Z" fill="#c99a1e"/></svg>
+</div>
+
+<div id="corner-status" style="display:none;">
+  <span id="owner-tag">👑 Owner</span>
+  <span>🏆 <span id="crown-count">0</span></span>
+  <span>💀 <span id="loss-count">0</span></span>
+</div>
+
+<div id="auth-overlay">
+  <div class="auth-box">
+    <div style="display:flex; gap:8px; margin-bottom:20px;">
+      <button id="tab-signup" onclick="switchAuthMode('signup')" style="flex:1; padding:10px; border-radius:10px; border:none; font-weight:800; cursor:pointer; background:#4d7cff; color:white;">Sign Up</button>
+      <button id="tab-login" onclick="switchAuthMode('login')" style="flex:1; padding:10px; border-radius:10px; border:none; font-weight:800; cursor:pointer; background:#16161c; color:#b8b8c4;">Log In</button>
+    </div>
+
+    <!-- SIGN UP -->
+    <div id="signup-form">
+      <div class="auth-title">Create Account</div>
+      <div class="auth-subtitle">Sign up to start playing Pen Launcher</div>
+      <div class="auth-field">
+        <label for="auth-username">Username</label>
+        <input id="auth-username" type="text" maxlength="20" placeholder="Choose a username" autocomplete="off">
+        <div class="hint">3–20 letters</div>
+      </div>
+      <div class="auth-row">
+        <div class="auth-field">
+          <label for="auth-email">Email</label>
+          <input id="auth-email" type="text" placeholder="yourname@gmail.com" autocomplete="off">
+          <div class="hint">Must end with @gmail.com</div>
+        </div>
+        <button class="auth-send-btn" id="auth-send-btn" onclick="sendCode()">Send Code</button>
+      </div>
+      <div class="auth-field" id="auth-code-field" style="display:none;">
+        <label for="auth-code">Code</label>
+        <input id="auth-code" type="text" maxlength="6" placeholder="6-digit code" autocomplete="off">
+        <div class="hint">We sent a code to your email</div>
+      </div>
+      <div class="auth-field">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" placeholder="Password" autocomplete="new-password">
+      </div>
+      <div class="auth-field">
+        <label for="auth-confirm">Confirm Password</label>
+        <input id="auth-confirm" type="password" placeholder="Confirm password" autocomplete="new-password">
+      </div>
+      <div class="auth-error" id="signup-error"></div>
+      <div class="auth-info" id="signup-info"></div>
+      <button class="auth-submit" onclick="createAccount()">Create Account</button>
+    </div>
+
+    <!-- LOG IN -->
+    <div id="login-form" style="display:none;">
+      <div class="auth-title">Log In</div>
+      <div class="auth-subtitle">Welcome back to Pen Launcher</div>
+      <div class="auth-field">
+        <label for="login-username">Username</label>
+        <input id="login-username" type="text" placeholder="Your username" autocomplete="off">
+      </div>
+
+      <div id="login-password-block">
+        <div class="auth-field">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <button class="auth-submit" onclick="loginWithPassword()">Log In</button>
+        <div style="text-align:center; margin-top:12px;">
+          <a href="#" onclick="switchLoginMethod('email'); return false;" style="color:#8a8a99; font-size:12px;">Log in with email code instead</a>
+        </div>
+      </div>
+
+      <div id="login-email-block" style="display:none;">
+        <div class="auth-row">
+          <div class="auth-field">
+            <label for="login-email">Email on your account</label>
+            <input id="login-email" type="text" placeholder="yourname@gmail.com" autocomplete="off">
+          </div>
+          <button class="auth-send-btn" id="login-send-btn" onclick="sendLoginCode()">Send Code</button>
+        </div>
+        <div class="auth-field" id="login-code-field" style="display:none;">
+          <label for="login-code">Code</label>
+          <input id="login-code" type="text" maxlength="6" placeholder="6-digit code" autocomplete="off">
+          <div class="hint">We sent a code to your email</div>
+        </div>
+        <button class="auth-submit" id="login-email-submit" style="display:none;" onclick="verifyLoginCode()">Verify & Log In</button>
+        <div style="text-align:center; margin-top:12px;">
+          <a href="#" onclick="switchLoginMethod('password'); return false;" style="color:#8a8a99; font-size:12px;">Log in with password instead</a>
+        </div>
+      </div>
+
+      <div class="auth-error" id="login-error"></div>
+      <div class="auth-info" id="login-info"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app" class="locked">
+
+  <div class="screen active" id="screen-main">
+    <div class="logo-wrap">
+      <div class="logo-text-wrap" id="logoTextWrap">
+        <svg class="writing-pen" id="writingPen" viewBox="0 0 64 64" fill="none">
+          <path d="M14 50 L44 20 L52 28 L22 58 L10 60 Z" fill="var(--ink-pen)" stroke="var(--ink-pen-dark)" stroke-width="2"/>
+          <path d="M44 20 L52 28" stroke="var(--nib)" stroke-width="3"/>
+          <path d="M10 60 L14 50 L18 54 Z" fill="var(--ink-pen-dark)"/>
+        </svg>
+        <div class="logo-text" id="logoText">PEN <span class="accent">LAUNCHER</span></div>
+      </div>
+    </div>
+    <div class="announcement" id="announcementBox"></div>
+    <div id="dynamicButtons" style="width:100%;"></div>
+    <button class="menu-btn btn-admin" id="admin-entry-btn" style="display:none;" onclick="showScreen('admin')">
+      <span>Admin Panel<span class="sub">Only visible to you</span></span>
+      <span class="icon">🛠️</span>
+    </button>
+  </div>
+
+  <div class="screen" id="screen-custom">
+    <button class="back-btn" onclick="showScreen('main')">← Back</button>
+    <div class="screen-title" id="custom-screen-title"></div>
+    <div class="grid-2" id="custom-screen-items"></div>
+  </div>
+
+  <!-- BOT LEVEL PICKER -->
+  <div class="screen" id="screen-botlevel">
+    <button class="back-btn" onclick="showScreen('main')">← Back</button>
+    <div class="screen-title">🤖 Choose Bot Level</div>
+    <div class="grid-2" style="grid-template-columns:1fr 1fr;">
+      <button class="item-btn" onclick="startLocalBotMatch(1)"><span class="item-icon">1</span><span class="item-label">Easiest</span></button>
+      <button class="item-btn" onclick="startLocalBotMatch(2)"><span class="item-icon">2</span><span class="item-label">Easy</span></button>
+      <button class="item-btn" onclick="startLocalBotMatch(3)"><span class="item-icon">3</span><span class="item-label">Medium</span></button>
+      <button class="item-btn" onclick="startLocalBotMatch(4)"><span class="item-icon">4</span><span class="item-label">Hard</span></button>
+      <button class="item-btn" style="grid-column:span 2;" onclick="startLocalBotMatch(5)"><span class="item-icon">5</span><span class="item-label">Hardest</span></button>
+    </div>
+  </div>
+
+  <!-- MATCH LOBBY -->
+  <div class="screen" id="screen-mp-lobby">
+    <button class="back-btn" onclick="exitMatch()">← Leave</button>
+    <div class="screen-title">🌐 Lobby</div>
+    <div id="lobby-status" style="margin-bottom:10px; font-weight:700;">Finding a match…</div>
+    <div id="lobby-players" style="width:100%;"></div>
+  </div>
+
+  <!-- DUEL SCREEN -->
+  <div class="screen" id="screen-duel">
+    <button class="back-btn" onclick="exitMatch()">← Leave</button>
+    <div class="pen-row" id="duel-top-bar"></div>
+    <div id="duel-timer"></div>
+    <div id="duel-turn-label"></div>
+    <canvas id="duel-canvas" width="320" height="220"></canvas>
+    <div class="pen-row" id="duel-bottom-bar"></div>
+    <div id="duel-admin-controls"></div>
+  </div>
+
+  <!-- ADMIN SCREEN -->
+  <div class="screen" id="screen-admin">
+    <button class="back-btn" onclick="showScreen('main')">← Back</button>
+    <div class="screen-title">🛠️ Admin Panel</div>
+    <div class="admin-section">
+      <h3>Announcement banner</h3>
+      <div class="admin-field"><textarea id="admin-announcement" rows="2" placeholder="Shown at the top of the home screen"></textarea></div>
+      <button class="admin-save" style="width:100%;padding:10px;border-radius:8px;border:none;font-weight:700;cursor:pointer;" onclick="saveAnnouncement()">Save Announcement</button>
+    </div>
+    <div class="admin-section">
+      <h3>Home screen buttons</h3>
+      <div id="admin-buttons-list"></div>
+      <div style="border-top:1px solid var(--btn-grey-dark); margin-top:10px; padding-top:10px;">
+        <div class="admin-field"><label>Label</label><input id="new-btn-label" placeholder="e.g. Leaderboard"></div>
+        <div class="admin-field"><label>Icon (emoji)</label><input id="new-btn-icon" placeholder="🏆" maxlength="4"></div>
+        <div class="admin-field"><label>Subtitle / description</label><input id="new-btn-sub" placeholder="Short description"></div>
+        <div class="admin-field"><label>Color</label>
+          <select id="new-btn-color"><option value="btn-blue">Blue</option><option value="btn-green">Green</option><option value="btn-purple">Purple</option><option value="btn-grey">Grey</option></select>
+        </div>
+        <div class="admin-field"><label>What happens when clicked?</label>
+          <select id="new-btn-action" onchange="toggleNewActionField()">
+            <option value="custom">Opens its own editable screen</option>
+            <option value="toast">Just shows a message</option>
+            <option value="link">Opens a link</option>
+          </select>
+        </div>
+        <div class="admin-field" id="new-btn-value-field" style="display:none;"><label>Value</label><input id="new-btn-actionval" placeholder="Message or link"></div>
+        <button class="admin-add" onclick="addButton()">+ Add Button</button>
+      </div>
+    </div>
+    <div class="admin-section">
+      <h3>Registered users</h3>
+      <div id="admin-users-list">Loading…</div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-manage-items">
+    <button class="back-btn" onclick="showScreen('admin')">← Back to Admin</button>
+    <div class="screen-title" id="manage-items-title">Manage screen</div>
+    <div class="admin-field"><label>Screen title</label><input id="manage-screen-title-input"></div>
+    <button class="admin-save" style="width:100%;padding:10px;border-radius:8px;border:none;font-weight:700;cursor:pointer;margin-bottom:14px;" onclick="saveManagedScreenTitle()">Save Title</button>
+    <div id="manage-items-list" style="width:100%;"></div>
+    <div class="admin-section" style="margin-top:10px;">
+      <h3>Add item</h3>
+      <div class="admin-field"><label>Icon / number</label><input id="new-item-icon" placeholder="2, 🤖, 🏆..."></div>
+      <div class="admin-field"><label>Label</label><input id="new-item-label" placeholder="Players, Bot / Computer..."></div>
+      <div class="checkbox-row"><input type="checkbox" id="new-item-comingsoon"><label for="new-item-comingsoon">Mark as "Coming soon" (greyed out)</label></div>
+      <div class="checkbox-row"><input type="checkbox" id="new-item-opens-screen" onchange="document.getElementById('new-item-value-field').style.display=this.checked?'none':'block'"><label for="new-item-opens-screen">This item opens its own screen</label></div>
+      <div class="admin-field" id="new-item-value-field"><label>Message when clicked</label><input id="new-item-value" placeholder="Coming soon"></div>
+      <button class="admin-add" onclick="addItemToManagedScreen()">+ Add Item</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBHpzd6hKcz-CRne_y2ITuYa5q6c47EyN8",
+    authDomain: "penlauncher-54f16.firebaseapp.com",
+    projectId: "penlauncher-54f16",
+    storageBucket: "penlauncher-54f16.firebasestorage.app",
+    messagingSenderId: "165881830205",
+    appId: "1:165881830205:web:43a8b1a71621bc6c6c4354"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const ADMIN_EMAIL = 'thefallenshadow48@gmail.com';
+  const EMAILJS_SERVICE_ID = 'service_penlauncher';
+  const EMAILJS_TEMPLATE_ID = 'template_laajp38';
+  const EMAILJS_PUBLIC_KEY = 'Ij6NA4OZlji_4F0sU';
+
+  const DEFAULT_BUTTONS = [
+    {label:'Multiplayer', icon:'🌐', sub:'Requires internet', color:'btn-blue', action:'custom', actionValue:'multiplayer'},
+    {label:'Offline', icon:'📴', sub:'No internet needed', color:'btn-green', action:'custom', actionValue:'offline'},
+    {label:'Play With Friends', icon:'🤝', sub:'Invite people you know', color:'btn-purple', action:'toast', actionValue:'Coming soon'},
+    {label:'Settings', icon:'⚙️', sub:'Coming soon', color:'btn-grey', action:'toast', actionValue:'Settings — coming soon'}
+  ];
+  const DEFAULT_SUBSCREENS = {
+    multiplayer: { title:'🌐 Multiplayer', items:[
+      {icon:'2', label:'Players', comingSoon:false, actionValue:''},
+      {icon:'3', label:'Players', comingSoon:false, actionValue:''},
+      {icon:'4', label:'Players', comingSoon:false, actionValue:''}
+    ]},
+    offline: { title:'📴 Play with', items:[
+      {icon:'🤖', label:'Bot / Computer', comingSoon:false, actionValue:'Coming soon'},
+      {icon:'🤝', label:'Friends', comingSoon:true, actionValue:'Coming soon'},
+      {icon:'⚙️', label:'Settings', comingSoon:true, actionValue:'Coming soon'}
+    ]}
+  };
+
+  let generatedCode = null;
+  let loginGeneratedCode = null;
+  let currentUser = null;
+  let siteConfig = { customMessage:'', buttons: DEFAULT_BUTTONS, subScreens: DEFAULT_SUBSCREENS };
+  let currentManagedScreenId = null;
+
+  function showAuthError(msg){ document.getElementById('signup-error').textContent=msg; document.getElementById('signup-info').textContent=''; }
+  function showAuthInfo(msg){ document.getElementById('signup-info').textContent=msg; document.getElementById('signup-error').textContent=''; }
+  function showLoginError(msg){ document.getElementById('login-error').textContent=msg; document.getElementById('login-info').textContent=''; }
+  function showLoginInfo(msg){ document.getElementById('login-info').textContent=msg; document.getElementById('login-error').textContent=''; }
+  let toastTimer;
+  function toast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),1600); }
+
+  function switchAuthMode(mode){
+    document.getElementById('signup-form').style.display = mode==='signup' ? 'block' : 'none';
+    document.getElementById('login-form').style.display = mode==='login' ? 'block' : 'none';
+    document.getElementById('tab-signup').style.background = mode==='signup' ? '#4d7cff' : '#16161c';
+    document.getElementById('tab-signup').style.color = mode==='signup' ? 'white' : '#b8b8c4';
+    document.getElementById('tab-login').style.background = mode==='login' ? '#4d7cff' : '#16161c';
+    document.getElementById('tab-login').style.color = mode==='login' ? 'white' : '#b8b8c4';
+  }
+  function switchLoginMethod(method){
+    document.getElementById('login-password-block').style.display = method==='password' ? 'block' : 'none';
+    document.getElementById('login-email-block').style.display = method==='email' ? 'block' : 'none';
+    showLoginError(''); showLoginInfo('');
+  }
+
+  async function sendCode(){
+    showAuthError('');
+    const username=document.getElementById('auth-username').value.trim();
+    const email=document.getElementById('auth-email').value.trim().toLowerCase();
+    if(username.length<3||username.length>20){ showAuthError('Username must be 3–20 letters.'); return; }
+    if(!email.endsWith('@gmail.com') || email.length<='@gmail.com'.length){ showAuthError('Email must end with @gmail.com'); return; }
+    const sendBtn=document.getElementById('auth-send-btn');
+    sendBtn.disabled=true; sendBtn.textContent='Checking...';
+    const usernameTaken = await db.collection('users').where('name','==',username).limit(1).get();
+    if(!usernameTaken.empty){ showAuthError('That username is already taken.'); sendBtn.disabled=false; sendBtn.textContent='Send Code'; return; }
+    const emailTaken = await db.collection('users').where('email','==',email).limit(1).get();
+    if(!emailTaken.empty){ showAuthError('An account with this email already exists — try logging in instead.'); sendBtn.disabled=false; sendBtn.textContent='Send Code'; return; }
+    generatedCode=Math.floor(100000+Math.random()*900000).toString();
+    sendBtn.textContent='Sending...';
+    try{
+      if(window.emailjs){ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { email, to_name:username, code:generatedCode }); toast('Code sent to '+email); }
+      else { toast('Demo mode — your code is '+generatedCode); }
+    }catch(err){ console.error(err); toast('Send failed — demo code: '+generatedCode); }
+    document.getElementById('auth-code-field').style.display='block';
+    document.getElementById('auth-code').value='';
+    sendBtn.disabled=false; sendBtn.textContent='Resend';
+  }
+
+  async function createAccount(){
+    showAuthError('');
+    const username=document.getElementById('auth-username').value.trim();
+    const email=document.getElementById('auth-email').value.trim().toLowerCase();
+    const code=document.getElementById('auth-code').value.trim();
+    const password=document.getElementById('auth-password').value;
+    const confirm=document.getElementById('auth-confirm').value;
+    if(username.length<3||username.length>20){ showAuthError('Username must be 3–20 letters.'); return; }
+    if(!email.endsWith('@gmail.com')){ showAuthError('Email must end with @gmail.com'); return; }
+    if(generatedCode===null){ showAuthError('Click "Send Code" first.'); return; }
+    if(code!==generatedCode){ showAuthError('Incorrect code.'); return; }
+    if(password.length<6){ showAuthError('Password must be at least 6 characters.'); return; }
+    if(password!==confirm){ showAuthError('Passwords do not match.'); return; }
+    const userData={ name:username, email, password, createdAt: Date.now(), wins:0, losses:0 };
+    const ref=await db.collection('users').add(userData);
+    userData.id=ref.id;
+    logInUser(userData);
+  }
+
+  async function loginWithPassword(){
+    showLoginError('');
+    const username=document.getElementById('login-username').value.trim();
+    const password=document.getElementById('login-password').value;
+    if(!username){ showLoginError('Enter your username.'); return; }
+    if(!password){ showLoginError('Enter your password.'); return; }
+    const snap=await db.collection('users').where('name','==',username).limit(1).get();
+    if(snap.empty){ showLoginError('Username not found.'); return; }
+    const userDoc=snap.docs[0].data();
+    userDoc.id=snap.docs[0].id;
+    if(userDoc.password!==password){ showLoginError('Incorrect password.'); return; }
+    logInUser(userDoc);
+  }
+
+  async function sendLoginCode(){
+    showLoginError('');
+    const username=document.getElementById('login-username').value.trim();
+    const email=document.getElementById('login-email').value.trim().toLowerCase();
+    if(!username){ showLoginError('Enter your username first.'); return; }
+    if(!email){ showLoginError('Enter the email on your account.'); return; }
+    const btn=document.getElementById('login-send-btn');
+    btn.disabled=true; btn.textContent='Checking...';
+    const snap=await db.collection('users').where('name','==',username).limit(1).get();
+    if(snap.empty){ showLoginError('Username not found.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+    const userDoc=snap.docs[0].data();
+    if(userDoc.email.toLowerCase()!==email){ showLoginError('That email does not match this username.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+    loginGeneratedCode=Math.floor(100000+Math.random()*900000).toString();
+    btn.textContent='Sending...';
+    try{
+      if(window.emailjs){ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { email, to_name:username, code:loginGeneratedCode }); toast('Code sent to '+email); }
+      else { toast('Demo mode — your code is '+loginGeneratedCode); }
+    }catch(err){ console.error(err); toast('Send failed — demo code: '+loginGeneratedCode); }
+    document.getElementById('login-code-field').style.display='block';
+    document.getElementById('login-email-submit').style.display='block';
+    document.getElementById('login-code').value='';
+    btn.disabled=false; btn.textContent='Resend';
+  }
+
+  async function verifyLoginCode(){
+    showLoginError('');
+    const username=document.getElementById('login-username').value.trim();
+    const code=document.getElementById('login-code').value.trim();
+    if(loginGeneratedCode===null){ showLoginError('Click "Send Code" first.'); return; }
+    if(code!==loginGeneratedCode){ showLoginError('Incorrect code.'); return; }
+    const snap=await db.collection('users').where('name','==',username).limit(1).get();
+    if(snap.empty){ showLoginError('Username not found.'); return; }
+    const userDoc=snap.docs[0].data();
+    userDoc.id=snap.docs[0].id;
+    logInUser(userDoc);
+  }
+
+  function logInUser(userData){
+    currentUser=userData;
+    localStorage.setItem('penLauncherUser', JSON.stringify(userData));
+    document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('app').classList.remove('locked');
+    document.getElementById('corner-status').style.display='flex';
+    if(userData.email===ADMIN_EMAIL){
+      document.getElementById('admin-entry-btn').style.display='flex';
+      document.getElementById('owner-tag').style.display='inline-block';
+    }
+    document.getElementById('crown-count').textContent=userData.wins||0;
+    document.getElementById('loss-count').textContent=userData.losses||0;
+    refreshCrownDisplay();
+  }
+  async function checkExistingLogin(){
+    const saved=localStorage.getItem('penLauncherUser');
+    if(!saved) return false;
+    const userData=JSON.parse(saved);
+    if(!userData.id){
+      try{
+        const snap=await db.collection('users').where('email','==',userData.email).limit(1).get();
+        if(!snap.empty){
+          userData.id=snap.docs[0].id;
+          localStorage.setItem('penLauncherUser', JSON.stringify(userData));
+        }
+      }catch(e){ console.error('Could not repair account id:', e); }
+    }
+    logInUser(userData);
+    return true;
+  }
+
+  async function refreshCrownDisplay(){
+    if(!currentUser || !currentUser.id) return;
+    const doc=await db.collection('users').doc(currentUser.id).get();
+    if(doc.exists){
+      const d=doc.data();
+      document.getElementById('crown-count').textContent=d.wins||0;
+      document.getElementById('loss-count').textContent=d.losses||0;
+    }
+  }
+
+  async function loadSiteConfig(){
+    const doc=await db.collection('game').doc('settings').get();
+    if(doc.exists){
+      const d=doc.data();
+      siteConfig.customMessage=d.customMessage||'';
+      siteConfig.buttons=d.buttons||DEFAULT_BUTTONS;
+      siteConfig.subScreens=d.subScreens||DEFAULT_SUBSCREENS;
+    } else {
+      await db.collection('game').doc('settings').set(siteConfig);
+    }
+    renderAnnouncement();
+    renderMainButtons();
+  }
+  async function persistConfig(){
+    await db.collection('game').doc('settings').set({ customMessage: siteConfig.customMessage, buttons: siteConfig.buttons, subScreens: siteConfig.subScreens });
+  }
+
+  function renderAnnouncement(){
+    const box=document.getElementById('announcementBox');
+    if(siteConfig.customMessage && siteConfig.customMessage.trim()){ box.textContent=siteConfig.customMessage; box.classList.add('show'); }
+    else box.classList.remove('show');
+  }
+
+  function renderMainButtons(){
+    const wrap=document.getElementById('dynamicButtons');
+    wrap.innerHTML='';
+    siteConfig.buttons.forEach(btn=>{
+      const b=document.createElement('button');
+      b.className='menu-btn '+(btn.color||'btn-blue');
+      b.innerHTML='<span>'+btn.label+(btn.sub?'<span class="sub">'+btn.sub+'</span>':'')+'</span><span class="icon">'+(btn.icon||'')+'</span>';
+      b.onclick=()=>runButtonAction(btn);
+      wrap.appendChild(b);
+    });
+  }
+
+  function runButtonAction(btn){
+    if(btn.actionValue && siteConfig.subScreens[btn.actionValue]){ openSubScreen(btn.actionValue); return; }
+    if(btn.action==='link' && btn.actionValue){ window.open(btn.actionValue,'_blank'); return; }
+    toast(btn.actionValue || 'Coming soon');
+  }
+
+  let queueListeners=[];
+  function openSubScreen(id){
+    queueListeners.forEach(unsub=>unsub());
+    queueListeners=[];
+    const sub=siteConfig.subScreens[id];
+    if(!sub) return;
+    document.getElementById('custom-screen-title').textContent=sub.title||id;
+    const itemsWrap=document.getElementById('custom-screen-items');
+    itemsWrap.innerHTML='';
+    itemsWrap.style.gridTemplateColumns = (sub.items||[]).length===3 ? '1fr 1fr 1fr' : '1fr 1fr';
+    (sub.items||[]).forEach((item,idx)=>{
+      const b=document.createElement('button');
+      b.className='item-btn'+(item.comingSoon?' grey':'');
+      if(id==='multiplayer'){
+        const size=idx+2;
+        const badgeId='queue-badge-'+size;
+        b.innerHTML='<span class="item-icon">'+(item.icon||'')+'</span><span class="item-label">'+(item.label||'')+'</span><span class="size-count-badge" id="'+badgeId+'">…</span>';
+        b.onclick=()=>startMatchmaking(size);
+        const unsub=db.collection('matches').where('status','==','waiting').where('size','==',size)
+          .onSnapshot(snap=>{
+            let waiting=0;
+            snap.forEach(doc=>{ waiting+=Object.keys(doc.data().players||{}).length; });
+            const el=document.getElementById(badgeId);
+            if(el) el.textContent = waiting>0 ? waiting+'/'+size+' waiting' : 'No one waiting';
+          }, err=>{ const el=document.getElementById(badgeId); if(el) el.textContent=''; });
+        queueListeners.push(unsub);
+      } else {
+        b.innerHTML='<span class="item-icon">'+(item.icon||'')+'</span><span class="item-label">'+(item.label||'')+'</span>';
+        if(item.label && item.label.toLowerCase().includes('bot')){
+          b.onclick=()=>startBotFlow();
+        } else if(item.linkScreen && siteConfig.subScreens[item.linkScreen]){
+          b.onclick=()=>openSubScreen(item.linkScreen);
+        } else {
+          b.onclick=()=>toast(item.actionValue||'Coming soon');
+        }
+      }
+      itemsWrap.appendChild(b);
+    });
+    showScreen('custom');
+  }
+
+  function showScreen(name){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById('screen-'+name).classList.add('active');
+    if(name==='admin') loadAdminPanel();
+  }
+
+  // ================= ADMIN PANEL =================
+  function loadAdminPanel(){
+    document.getElementById('admin-announcement').value=siteConfig.customMessage||'';
+    renderAdminButtonsList();
+    loadUsersList();
+  }
+  async function saveAnnouncement(){
+    siteConfig.customMessage=document.getElementById('admin-announcement').value;
+    await persistConfig();
+    renderAnnouncement();
+    toast('Announcement saved');
+  }
+  function renderAdminButtonsList(){
+    const list=document.getElementById('admin-buttons-list');
+    list.innerHTML='';
+    siteConfig.buttons.forEach((btn,i)=>{
+      const card=document.createElement('div');
+      card.className='admin-card';
+      card.innerHTML =
+        '<strong>'+(btn.icon||'')+' '+btn.label+'</strong>'+
+        '<div style="font-size:12px;color:var(--text-dim);">'+(btn.sub||'')+'</div>'+
+        '<div class="admin-btn-row">'+
+          '<button class="admin-edit" onclick="toggleEditButton('+i+')">Edit</button>'+
+          '<button class="admin-manage" onclick="manageScreen('+i+')">Manage Inside</button>'+
+          '<button class="admin-delete" onclick="deleteButton('+i+')">Delete</button>'+
+        '</div>'+
+        '<div id="edit-form-'+i+'"></div>';
+      list.appendChild(card);
+    });
+  }
+  function toggleEditButton(i){
+    const holder=document.getElementById('edit-form-'+i);
+    if(holder.innerHTML){ holder.innerHTML=''; return; }
+    const btn=siteConfig.buttons[i];
+    holder.innerHTML =
+      '<div class="admin-edit-form">'+
+        '<div class="admin-field"><label>Label</label><input id="edit-label-'+i+'" value="'+(btn.label||'').replace(/"/g,'&quot;')+'"></div>'+
+        '<div class="admin-field"><label>Icon</label><input id="edit-icon-'+i+'" value="'+(btn.icon||'')+'"></div>'+
+        '<div class="admin-field"><label>Subtitle / description</label><input id="edit-sub-'+i+'" value="'+(btn.sub||'').replace(/"/g,'&quot;')+'"></div>'+
+        '<div class="admin-field"><label>Color</label><select id="edit-color-'+i+'">'+
+          ['btn-blue','btn-green','btn-purple','btn-grey'].map(c=>'<option value="'+c+'"'+(btn.color===c?' selected':'')+'>'+c.replace('btn-','')+'</option>').join('')+
+        '</select></div>'+
+        '<div class="admin-field"><label>Action</label><select id="edit-action-'+i+'">'+
+          '<option value="custom"'+(btn.action==='custom'?' selected':'')+'>Opens its own editable screen</option>'+
+          '<option value="toast"'+(btn.action==='toast'?' selected':'')+'>Just shows a message</option>'+
+          '<option value="link"'+(btn.action==='link'?' selected':'')+'>Opens a link</option>'+
+        '</select></div>'+
+        '<div class="admin-field"><label>Value (ignored if "opens screen")</label><input id="edit-value-'+i+'" value="'+(btn.action!=='custom'?(btn.actionValue||''):'').replace(/"/g,'&quot;')+'"></div>'+
+        '<button class="admin-save" style="width:100%;padding:10px;border-radius:8px;border:none;font-weight:700;cursor:pointer;" onclick="saveButtonEdit('+i+')">Save Changes</button>'+
+      '</div>';
+  }
+  async function saveButtonEdit(i){
+    const btn=siteConfig.buttons[i];
+    const newLabel=document.getElementById('edit-label-'+i).value.trim();
+    if(!newLabel){ toast('Label cannot be empty'); return; }
+    btn.label=newLabel;
+    btn.icon=document.getElementById('edit-icon-'+i).value.trim();
+    btn.sub=document.getElementById('edit-sub-'+i).value.trim();
+    btn.color=document.getElementById('edit-color-'+i).value;
+    btn.action=document.getElementById('edit-action-'+i).value;
+    const newValue=document.getElementById('edit-value-'+i).value.trim();
+    if(btn.action==='custom'){
+      if(!btn.actionValue || !siteConfig.subScreens[btn.actionValue]){
+        const id=slugify(newLabel);
+        siteConfig.subScreens[id]=siteConfig.subScreens[id]||{title:newLabel, items:[]};
+        btn.actionValue=id;
+      }
+    } else { btn.actionValue=newValue; }
+    await persistConfig();
+    renderMainButtons();
+    renderAdminButtonsList();
+    toast('Button updated');
+  }
+  async function deleteButton(i){
+    siteConfig.buttons.splice(i,1);
+    await persistConfig();
+    renderMainButtons();
+    renderAdminButtonsList();
+    toast('Button removed');
+  }
+  function slugify(s){
+    let base=s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')||'screen';
+    let id=base, n=1;
+    while(siteConfig.subScreens[id]){ id=base+'-'+n; n++; }
+    return id;
+  }
+  function toggleNewActionField(){
+    const action=document.getElementById('new-btn-action').value;
+    document.getElementById('new-btn-value-field').style.display = action==='custom' ? 'none' : 'block';
+  }
+  async function addButton(){
+    const label=document.getElementById('new-btn-label').value.trim();
+    const icon=document.getElementById('new-btn-icon').value.trim();
+    const sub=document.getElementById('new-btn-sub').value.trim();
+    const color=document.getElementById('new-btn-color').value;
+    const action=document.getElementById('new-btn-action').value;
+    const actionValRaw=document.getElementById('new-btn-actionval').value.trim();
+    if(!label){ toast('Enter a label first'); return; }
+    let actionValue=actionValRaw;
+    if(action==='custom'){ const id=slugify(label); siteConfig.subScreens[id]={ title:label, items:[] }; actionValue=id; }
+    siteConfig.buttons.push({label, icon, sub, color, action, actionValue});
+    await persistConfig();
+    renderAdminButtonsList();
+    renderMainButtons();
+    document.getElementById('new-btn-label').value='';
+    document.getElementById('new-btn-icon').value='';
+    document.getElementById('new-btn-sub').value='';
+    document.getElementById('new-btn-actionval').value='';
+    toast('Button added');
+  }
+  async function manageScreen(i){
+    const btn=siteConfig.buttons[i];
+    if(btn.action!=='custom' || !btn.actionValue || !siteConfig.subScreens[btn.actionValue]){
+      const id=(btn.actionValue && siteConfig.subScreens[btn.actionValue]) ? btn.actionValue : slugify(btn.label);
+      siteConfig.subScreens[id]=siteConfig.subScreens[id]||{title:btn.label, items:[]};
+      btn.action='custom'; btn.actionValue=id;
+      await persistConfig();
+      renderAdminButtonsList();
+    }
+    currentManagedScreenId=btn.actionValue;
+    const sub=siteConfig.subScreens[currentManagedScreenId];
+    document.getElementById('manage-items-title').textContent='Manage: '+(sub.title||btn.label);
+    document.getElementById('manage-screen-title-input').value=sub.title||btn.label;
+    renderManagedItemsList();
+    showScreen('manage-items');
+  }
+  async function saveManagedScreenTitle(){
+    const newTitle=document.getElementById('manage-screen-title-input').value.trim();
+    if(!newTitle){ toast('Title cannot be empty'); return; }
+    siteConfig.subScreens[currentManagedScreenId].title=newTitle;
+    await persistConfig();
+    document.getElementById('manage-items-title').textContent='Manage: '+newTitle;
+    renderAdminButtonsList();
+    toast('Screen title saved');
+  }
+  function renderManagedItemsList(){
+    const sub=siteConfig.subScreens[currentManagedScreenId];
+    const list=document.getElementById('manage-items-list');
+    list.innerHTML='';
+    (sub.items||[]).forEach((item,i)=>{
+      const card=document.createElement('div');
+      card.className='admin-card';
+      card.innerHTML =
+        '<strong>'+(item.icon||'')+' '+item.label+'</strong>'+(item.comingSoon?' <span class="badge">SOON</span>':'')+
+        '<div style="font-size:12px;color:var(--text-dim);">'+(item.linkScreen ? 'Opens its own screen' : 'Click message: '+(item.actionValue||''))+'</div>'+
+        '<div class="admin-btn-row">'+
+          (item.linkScreen ? '<button class="admin-manage" onclick="manageNestedItem('+i+')">Manage Inside</button>' : '')+
+          '<button class="admin-delete" onclick="deleteManagedItem('+i+')">Delete</button>'+
+        '</div>';
+      list.appendChild(card);
+    });
+    if(!sub.items || sub.items.length===0) list.innerHTML='<div style="font-size:13px;color:var(--text-dim);">No items yet — add one below.</div>';
+  }
+  function manageNestedItem(i){
+    const parentId=currentManagedScreenId;
+    const item=siteConfig.subScreens[parentId].items[i];
+    currentManagedScreenId=item.linkScreen;
+    const sub=siteConfig.subScreens[currentManagedScreenId];
+    document.getElementById('manage-items-title').textContent='Manage: '+(sub.title||item.label);
+    document.getElementById('manage-screen-title-input').value=sub.title||item.label;
+    renderManagedItemsList();
+  }
+  async function addItemToManagedScreen(){
+    const icon=document.getElementById('new-item-icon').value.trim();
+    const label=document.getElementById('new-item-label').value.trim();
+    const comingSoon=document.getElementById('new-item-comingsoon').checked;
+    const opensScreen=document.getElementById('new-item-opens-screen').checked;
+    const actionValue=document.getElementById('new-item-value').value.trim() || 'Coming soon';
+    if(!label){ toast('Enter a label first'); return; }
+    const newItem={icon, label, comingSoon, actionValue};
+    if(opensScreen){ const id=slugify(label); siteConfig.subScreens[id]=siteConfig.subScreens[id]||{title:label, items:[]}; newItem.linkScreen=id; }
+    siteConfig.subScreens[currentManagedScreenId].items.push(newItem);
+    await persistConfig();
+    renderManagedItemsList();
+    document.getElementById('new-item-icon').value='';
+    document.getElementById('new-item-label').value='';
+    document.getElementById('new-item-comingsoon').checked=false;
+    document.getElementById('new-item-opens-screen').checked=false;
+    document.getElementById('new-item-value-field').style.display='block';
+    document.getElementById('new-item-value').value='';
+    toast('Item added');
+  }
+  async function deleteManagedItem(i){
+    siteConfig.subScreens[currentManagedScreenId].items.splice(i,1);
+    await persistConfig();
+    renderManagedItemsList();
+    toast('Item removed');
+  }
+  async function loadUsersList(){
+    const el=document.getElementById('admin-users-list');
+    el.innerHTML='Loading…';
+    const snap=await db.collection('users').orderBy('createdAt','desc').get();
+    if(snap.empty){ el.innerHTML='<div style="font-size:13px;color:var(--text-dim);">No users yet.</div>'; return; }
+    el.innerHTML='';
+    snap.forEach(doc=>{
+      const u=doc.data();
+      const row=document.createElement('div');
+      row.className='admin-user-row';
+      const date=u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '';
+      row.innerHTML='<span>'+u.name+'</span><span style="color:var(--text-dim);">'+u.email+'</span><span style="color:var(--text-dim);">'+date+'</span>';
+      el.appendChild(row);
+    });
+  }
+
+  // ================= MATCHMAKING + DUEL =================
+  let currentMatchId=null, currentMatchUnsub=null;
+  let canvasInteractable=false, dragStartPt=null, countdownInterval=null;
+  let localMode=false, localMatchState=null, duelSelfUid=null;
+  const BOT_PEN_NAMES=['Iron Nib','Shadow Quill','Thunder Point','Ink Fang','Steel Tip','Ghost Marker','Crimson Stroke','Wolf Pen'];
+
+  async function startMatchmaking(size){
+    const banSnap=await db.collection('bans').where('email','==',currentUser.email).orderBy('bannedUntil','desc').limit(1).get();
+    if(!banSnap.empty){
+      const b=banSnap.docs[0].data();
+      if(b.bannedUntil>Date.now()){ toast('Temp-banned for '+Math.ceil((b.bannedUntil-Date.now())/1000)+'s'); return; }
+    }
+    joinOrCreateMatch(size);
+  }
+
+  function startBotFlow(){
+    showScreen('botlevel');
+  }
+
+  // ---- Local (offline-capable) bot match ----
+  function startLocalBotMatch(level){
+    localMode=true;
+    duelSelfUid='you';
+    selectedPenIndex=null;
+    botActivePenIndex=null;
+    const noiseByLevel={1:170,2:120,3:75,4:40,5:15};
+    const shuffled=[...BOT_PEN_NAMES].sort(()=>Math.random()-0.5);
+    localMatchState={
+      status:'countdown', countdownStart:Date.now(), level, noise:noiseByLevel[level]||75,
+      players:{
+        you:{ uid:'you', pens:['','','',''], penPos:initPenPositions('bottom'), penPosStart:initPenPositions('bottom'), deadPens:[false,false,false,false], lives:4, score:0, marks:[], eliminated:false, email:currentUser.email },
+        bot:{ uid:'bot', pens:shuffled.slice(0,4), penPos:initPenPositions('top'), penPosStart:initPenPositions('top'), deadPens:[false,false,false,false], lives:4, score:0, marks:[], eliminated:false, email:'' }
+      },
+      turnOrder: Math.random()<0.5 ? ['you','bot'] : ['bot','you'],
+      currentTurnIndex:0
+    };
+    showScreen('duel');
+    document.getElementById('duel-admin-controls').style.display='none';
+    renderLocalDuel();
+    clearInterval(countdownInterval);
+    countdownInterval=setInterval(()=>{
+      const remaining=30-Math.floor((Date.now()-localMatchState.countdownStart)/1000);
+      const el=document.getElementById('duel-timer');
+      if(remaining>0){ el.textContent='⏳ '+remaining+'s to name your 4 pens'; }
+      else{
+        el.textContent=''; clearInterval(countdownInterval);
+        autoFillPens(localMatchState.players.you.pens, localMatchState.players.bot.pens);
+        localMatchState.status='active';
+        renderLocalDuel();
+        if(localMatchState.turnOrder[0]==='bot') setTimeout(botAutoThrow,900);
+      }
+    },500);
+  }
+
+  function saveLocalPenName(idx){
+    const input=document.getElementById('local-pen-'+idx);
+    const name=input.value.trim();
+    const errEl=document.getElementById('local-pen-err-'+idx);
+    if(!name){ errEl.textContent='Enter a name'; return; }
+    const taken=[...localMatchState.players.you.pens.filter((n,i)=>i!==idx), ...localMatchState.players.bot.pens]
+      .some(n=>n && n.toLowerCase()===name.toLowerCase());
+    if(taken){ errEl.textContent='Already taken — pick another'; return; }
+    errEl.textContent='';
+    localMatchState.players.you.pens[idx]=name;
+    renderLocalDuel();
+  }
+
+  function autoFillPens(...penArrays){
+    const used=new Set();
+    penArrays.forEach(arr=>arr.forEach(n=>{ if(n) used.add(n.toLowerCase()); }));
+    penArrays.forEach(arr=>{
+      arr.forEach((n,i)=>{
+        if(!n){
+          let candidate='Pen '+(i+1);
+          let c=candidate, n2=1;
+          while(used.has(c.toLowerCase())){ c=candidate+' '+n2; n2++; }
+          arr[i]=c; used.add(c.toLowerCase());
+        }
+      });
+    });
+  }
+
+  function renderLocalDuel(){
+    renderDuelState(localMatchState, localMatchState.status==='countdown');
+  }
+
+  function localThrowPen(start,end){
+    if(selectedPenIndex===null){ toast('Select one of your pens first'); return; }
+    canvasInteractable=false;
+    const players=localMatchState.players;
+    const penPos=players.you.penPos[selectedPenIndex];
+    const mark=computeMarkFromPen(penPos, start, end, document.getElementById('duel-canvas'), selectedPenIndex);
+    players.you.penPos[selectedPenIndex]={x:mark.cx, y:mark.cy};
+    players.you.marks=[...(players.you.marks||[]), mark];
+    let cut=false;
+    const botMarks=players.bot.marks||[];
+    if(botMarks.length){
+      const latest=botMarks[botMarks.length-1];
+      if(segmentsIntersect(mark,latest)){
+        players.bot.deadPens[latest.penIndex]=true;
+        players.bot.lives=4-players.bot.deadPens.filter(Boolean).length;
+        if(players.bot.lives===0) players.bot.eliminated=true;
+        cut=true;
+      }
+    }
+    if(cut){
+      players.you.score=(players.you.score||0)+1;
+      players.you.marks=[];
+      players.you.penPos[selectedPenIndex]={...players.you.penPosStart[selectedPenIndex]};
+    }
+    advanceLocalTurn();
+  }
+
+  function advanceLocalTurn(){
+    const players=localMatchState.players;
+    const remaining=Object.values(players).filter(p=>!p.eliminated);
+    if(remaining.length<=1){
+      localMatchState.status='finished';
+      localMatchState.winner=remaining.length===1?remaining[0].uid:null;
+      renderLocalDuel();
+      if(localMatchState.winner==='you' && currentUser.id){
+        db.collection('users').doc(currentUser.id).update({wins:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        refreshCrownDisplay();
+      } else if(localMatchState.winner==='bot' && currentUser.id){
+        db.collection('users').doc(currentUser.id).update({losses:firebase.firestore.FieldValue.increment(1)}).catch(()=>{});
+        refreshCrownDisplay();
+      }
+      return;
+    }
+    localMatchState.currentTurnIndex=(localMatchState.currentTurnIndex+1)%localMatchState.turnOrder.length;
+    let next=localMatchState.turnOrder[localMatchState.currentTurnIndex];
+    if(players[next].eliminated) localMatchState.currentTurnIndex=(localMatchState.currentTurnIndex+1)%localMatchState.turnOrder.length;
+    next=localMatchState.turnOrder[localMatchState.currentTurnIndex];
+    renderLocalDuel();
+    if(next==='bot' && !players.bot.eliminated) setTimeout(botAutoThrow,900);
+  }
+
+  let botActivePenIndex=null;
+  function botAutoThrow(){
+    if(!localMatchState || localMatchState.status!=='active') return;
+    const canvas=document.getElementById('duel-canvas');
+    const players=localMatchState.players;
+    const yourMarks=players.you.marks||[];
+    const targetMark = yourMarks.length ? yourMarks[yourMarks.length-1] : {cx:canvas.width/2,cy:canvas.height/2};
+    const targetX=targetMark.cx, targetY=targetMark.cy;
+    const noise=localMatchState.noise;
+    const aimX=Math.min(Math.max(targetX+(Math.random()-0.5)*noise,10),canvas.width-10);
+    const aimY=Math.min(Math.max(targetY+(Math.random()-0.5)*noise,10),canvas.height-10);
+    if(botActivePenIndex===null || players.bot.deadPens[botActivePenIndex]){
+      const living=[0,1,2,3].filter(i=>!players.bot.deadPens[i]);
+      botActivePenIndex = living.length ? living[Math.floor(Math.random()*living.length)] : 0;
+    }
+    const penPos=players.bot.penPos[botActivePenIndex];
+    const mark=computeMark(penPos, {x:aimX,y:aimY}, canvas);
+    mark.penIndex=botActivePenIndex;
+    players.bot.penPos[botActivePenIndex]={x:mark.cx, y:mark.cy};
+    players.bot.marks=[...(players.bot.marks||[]), mark];
+    let cut=false;
+    const yourLatest = yourMarks.length ? yourMarks[yourMarks.length-1] : null;
+    if(yourLatest && segmentsIntersect(mark,yourLatest)){
+      players.you.deadPens[yourLatest.penIndex]=true;
+      players.you.lives=4-players.you.deadPens.filter(Boolean).length;
+      if(players.you.lives===0) players.you.eliminated=true;
+      if(selectedPenIndex===yourLatest.penIndex) selectedPenIndex=null;
+      cut=true;
+    }
+    if(cut){
+      players.bot.score=(players.bot.score||0)+1;
+      players.bot.marks=[];
+      players.bot.penPos[botActivePenIndex]={...players.bot.penPosStart[botActivePenIndex]};
+    }
+    advanceLocalTurn();
+  }
+
+  function computeMark(start,end,canvas){
+    const dx=end.x-start.x, dy=end.y-start.y;
+    const dragDist=Math.sqrt(dx*dx+dy*dy);
+    let dist=Math.min(dragDist,38);
+    const angle=Math.atan2(dy,dx);
+    const slip=(Math.random()-0.5)*0.5;
+    const finalAngle=angle+slip;
+    const restX=Math.min(Math.max(start.x+Math.cos(finalAngle)*dist,10),canvas.width-10);
+    const restY=Math.min(Math.max(start.y+Math.sin(finalAngle)*dist,10),canvas.height-10);
+    return { x1:start.x, y1:start.y, x2:restX, y2:restY, cx:restX, cy:restY };
+  }
+
+  const CANVAS_W=320, CANVAS_H=220;
+  function initPenPositions(row){
+    const y = row==='bottom' ? CANVAS_H-15 : 15;
+    return [0,1,2,3].map(i=>({x:40+i*80, y}));
+  }
+  let selectedPenIndex=null, lastMatchData=null;
+  function selectPen(i){
+    selectedPenIndex=i;
+    if(localMode) renderLocalDuel(); else if(lastMatchData) renderDuelState(lastMatchData, lastMatchData.status==='countdown');
+  }
+  function computeMarkFromPen(penPos, dragStart, dragEnd, canvas, penIndex){
+    const dx=dragEnd.x-dragStart.x, dy=dragEnd.y-dragStart.y;
+    const translatedEnd={x:penPos.x+dx, y:penPos.y+dy};
+    const mark=computeMark(penPos, translatedEnd, canvas);
+    mark.penIndex=penIndex;
+    return mark;
+  }
+
+
+  async function joinOrCreateMatch(size){
+    localMode=false;
+    duelSelfUid=currentUser.id;
+    selectedPenIndex=null;
+    showScreen('mp-lobby');
+    document.getElementById('lobby-status').textContent='Finding a match…';
+    const uid=currentUser.id;
+    const waitingSnap=await db.collection('matches').where('status','==','waiting').where('size','==',size).orderBy('createdAt','asc').limit(10).get();
+    let joinedDoc=null;
+    for(const d of waitingSnap.docs){
+      const data=d.data();
+      const playerCount=Object.keys(data.players||{}).length;
+      if(playerCount<size && !data.players[uid]){ joinedDoc=d; break; }
+    }
+    if(joinedDoc){
+      const data=joinedDoc.data();
+      const update={};
+      update['players.'+uid]={ uid, name:currentUser.name, email:currentUser.email, pens:['','','',''], penPos:initPenPositions('top'), penPosStart:initPenPositions('top'), deadPens:[false,false,false,false], lives:4, score:0, marks:[], eliminated:false };
+      const newCount=Object.keys(data.players||{}).length+1;
+      if(newCount>=size){
+        const allUids=[...Object.keys(data.players||{}), uid];
+        const shuffledOrder=allUids.sort(()=>Math.random()-0.5);
+        update.status='countdown';
+        update.countdownStart=Date.now();
+        update.turnOrder=shuffledOrder;
+        update.currentTurnIndex=0;
+        shuffledOrder.forEach((pid,i)=>{
+          update['players.'+pid+'.penPos']=initPenPositions(i===0?'bottom':'top');
+        });
+      }
+      await db.collection('matches').doc(joinedDoc.id).update(update);
+      currentMatchId=joinedDoc.id;
+    } else {
+      const newMatch={ status:'waiting', size, createdAt:Date.now(),
+        players:{ [uid]:{ uid, name:currentUser.name, email:currentUser.email, pens:['','','',''], penPos:initPenPositions('bottom'), penPosStart:initPenPositions('bottom'), deadPens:[false,false,false,false], lives:4, score:0, marks:[], eliminated:false } } };
+      const ref=await db.collection('matches').add(newMatch);
+      currentMatchId=ref.id;
+    }
+    listenToMatch();
+  }
+
+  function listenToMatch(){
+    if(currentMatchUnsub) currentMatchUnsub();
+    currentMatchUnsub=db.collection('matches').doc(currentMatchId).onSnapshot(doc=>{
+      if(!doc.exists) return;
+      renderMatch(doc.data());
+    });
+  }
+
+  function renderMatch(data){
+    lastMatchData=data;
+    if(data.status==='waiting'){
+      showScreen('mp-lobby');
+      const count=Object.keys(data.players||{}).length;
+      document.getElementById('lobby-status').innerHTML=
+        '<div class="lobby-count-badge">'+count+' / '+data.size+' players found</div>'+
+        '<div class="lobby-progress"><div class="lobby-progress-fill" style="width:'+Math.round((count/data.size)*100)+'%"></div></div>';
+      document.getElementById('lobby-players').innerHTML=Object.values(data.players).map(p=>'<div class="lobby-name-row">👤 '+(p.name||'Player')+'</div>').join('');
+    } else if(data.status==='countdown'){
+      showScreen('duel');
+      startCountdownDisplay(data.countdownStart);
+      renderDuelState(data,true);
+    } else if(data.status==='active'){
+      showScreen('duel');
+      document.getElementById('duel-timer').textContent='';
+      renderDuelState(data,false);
+    } else if(data.status==='finished'){
+      showScreen('duel');
+      renderDuelState(data,false);
+      maybeRecordResult(data);
+    }
+  }
+
+  function startCountdownDisplay(startTime){
+    clearInterval(countdownInterval);
+    countdownInterval=setInterval(async ()=>{
+      const remaining=30-Math.floor((Date.now()-startTime)/1000);
+      const el=document.getElementById('duel-timer');
+      if(remaining>0){ el.textContent='⏳ '+remaining+'s to name your 4 pens'; }
+      else {
+        el.textContent=''; clearInterval(countdownInterval);
+        const ref=db.collection('matches').doc(currentMatchId);
+        const snap=await ref.get();
+        if(snap.exists && snap.data().status==='countdown'){
+          const data=snap.data();
+          const allPenArrays=Object.values(data.players).map(p=>p.pens||['','','','']);
+          autoFillPens(...allPenArrays);
+          const update={status:'active'};
+          Object.keys(data.players).forEach((pid,i)=>{ update['players.'+pid+'.pens']=allPenArrays[i]; });
+          await ref.update(update);
+        }
+      }
+    },500);
+  }
+
+  async function savePenName(idx){
+    const input=document.getElementById('online-pen-'+idx);
+    const name=input.value.trim();
+    const errEl=document.getElementById('online-pen-err-'+idx);
+    if(!name){ errEl.textContent='Enter a name'; return; }
+    const ref=db.collection('matches').doc(currentMatchId);
+    const snap=await ref.get();
+    const data=snap.data();
+    const uid=duelSelfUid;
+    const taken=Object.entries(data.players).some(([pid,p])=>
+      (p.pens||[]).some((n,i)=> n && n.toLowerCase()===name.toLowerCase() && !(pid===uid && i===idx))
+    );
+    if(taken){ errEl.textContent='Already taken — pick another'; return; }
+    errEl.textContent='';
+    const pens=data.players[uid].pens||['','','',''];
+    pens[idx]=name;
+    await ref.update({ ['players.'+uid+'.pens']: pens });
+  }
+
+  function renderPenRow(containerEl, player, isSelf, isCountdown, canSelect){
+    containerEl.innerHTML='';
+    const label=document.createElement('div');
+    label.style.cssText='width:100%; font-weight:800; font-size:12px; text-align:center; margin-bottom:4px;';
+    label.textContent=(isSelf?'You':(player.name||'Opponent'))+(player.email===ADMIN_EMAIL?' 👑':'');
+    containerEl.appendChild(label);
+    const pens=player.pens||['','','',''];
+    const deadPens=player.deadPens||[false,false,false,false];
+    pens.forEach((name,i)=>{
+      const slot=document.createElement('div');
+      slot.className='pen-slot';
+      const isDead = !!deadPens[i];
+      if(isSelf && isCountdown && !name){
+        slot.innerHTML='<input id="'+(isSelf&&localMode?'local-pen-':'online-pen-')+i+'" placeholder="Pen '+(i+1)+'" maxlength="20" onblur="'+(localMode?'saveLocalPenName('+i+')':'savePenName('+i+')')+'"><div class="pen-error" id="'+(localMode?'local-pen-err-':'online-pen-err-')+i+'"></div>';
+      } else {
+        const selectable = isSelf && canSelect && !isDead;
+        const selected = selectable && selectedPenIndex===i;
+        slot.innerHTML='<div class="pen-name-label'+(isDead?' dead':'')+'" style="'+(selectable?'cursor:pointer;border:2px solid '+(selected?'#4d7cff':'transparent')+';border-radius:8px;padding:2px 4px;':'')+'"'+(selectable?' onclick="selectPen('+i+')"':'')+'>'+(name||'Pen '+(i+1))+(selected?' ✓':'')+'</div>';
+      }
+      containerEl.appendChild(slot);
+    });
+    if(player.eliminated){ const out=document.createElement('div'); out.style.cssText='width:100%;text-align:center;color:#ff6b6b;font-size:10px;font-weight:800;'; out.textContent='OUT'; containerEl.appendChild(out); }
+  }
+
+  function renderDuelState(data, isCountdown){
+    const uid=duelSelfUid;
+    const players=data.players||{};
+    const selfPlayer=players[uid];
+    const opponents=Object.values(players).filter(p=>p.uid!==uid);
+    const turnOrder=data.turnOrder||[];
+    const currentTurnUid=turnOrder.length ? turnOrder[data.currentTurnIndex % turnOrder.length] : null;
+    const canSelect = data.status==='active' && currentTurnUid===uid;
+
+    if(selfPlayer && selfPlayer.deadPens && selectedPenIndex!==null && selfPlayer.deadPens[selectedPenIndex]){
+      selectedPenIndex=null;
+    }
+
+    renderPenRow(document.getElementById('duel-top-bar'), opponents[0]||{pens:['','','',''],lives:4}, false, isCountdown, false);
+    if(selfPlayer) renderPenRow(document.getElementById('duel-bottom-bar'), selfPlayer, true, isCountdown, canSelect);
+
+    const turnLabel=document.getElementById('duel-turn-label');
+    if(data.status==='active'){
+      turnLabel.textContent = currentTurnUid===uid ? "Your turn — drag on the surface to aim, release to throw" : (players[currentTurnUid] ? (players[currentTurnUid].name||'Opponent')+"'s turn" : '');
+    } else if(isCountdown){ turnLabel.textContent='Name all 4 of your pens before time runs out'; }
+    else if(data.status==='finished'){ turnLabel.textContent = data.winner===uid ? '🏆 You won!' : (players[data.winner] ? (players[data.winner].name||'Opponent')+' won' : 'Match over'); }
+
+    drawCanvasMarks(players);
+    canvasInteractable = data.status==='active' && currentTurnUid===uid && !(players[uid] && players[uid].eliminated);
+
+    const adminBox=document.getElementById('duel-admin-controls');
+    if(!localMode && currentUser.email===ADMIN_EMAIL && data.status!=='finished'){
+      adminBox.style.display='block';
+      adminBox.innerHTML='<div style="font-weight:800;margin-bottom:6px;">👑 Owner Controls</div>'+
+        Object.values(players).filter(p=>p.uid!==uid).map(p=>
+          '<div style="margin-bottom:6px;">'+(p.name||'Player')+
+          ' <button data-uid="'+p.uid+'" onclick="adminKick(this.dataset.uid)">Kick</button>'+
+          ' <button data-uid="'+p.uid+'" data-email="'+p.email+'" onclick="adminBan(this.dataset.uid,this.dataset.email)">Temp Ban</button>'+
+          ' <button data-uid="'+p.uid+'" onclick="adminKillLives(this.dataset.uid,1)">-1 Life</button>'+
+          ' <button data-uid="'+p.uid+'" onclick="adminKillLives(this.dataset.uid,2)">-2 Lives</button>'+
+          ' <button data-uid="'+p.uid+'" onclick="adminKillLives(this.dataset.uid,4)">Eliminate</button></div>'
+        ).join('')+
+        '<button onclick="adminForceWin()" style="background:#241947;">Force Me To Win</button>';
+    } else { adminBox.style.display='none'; }
+  }
+
+  function drawCanvasMarks(players){
+    const canvas=document.getElementById('duel-canvas');
+    const ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#f4f2fb'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    const colors=['#4d7cff','#3fcf8e','#a55cff','#ff7a59'];
+    let ci=0;
+    Object.values(players).forEach(p=>{
+      const color=colors[ci%colors.length]; ci++;
+      (p.marks||[]).forEach((m,idx)=>{
+        const isLatest=idx===(p.marks.length-1);
+        ctx.strokeStyle=color; ctx.lineWidth=isLatest?4:2; ctx.globalAlpha=isLatest?1:0.35;
+        ctx.beginPath(); ctx.moveTo(m.x1,m.y1); ctx.lineTo(m.x2,m.y2); ctx.stroke(); ctx.globalAlpha=1;
+      });
+      const deadPens=p.deadPens||[false,false,false,false];
+      (p.penPos||[]).forEach((pos,i)=>{
+        if(deadPens[i]) return;
+        const isMine = p.uid===duelSelfUid;
+        const isSelected = isMine && selectedPenIndex===i;
+        ctx.beginPath();
+        ctx.arc(pos.x,pos.y,isSelected?7:5,0,Math.PI*2);
+        ctx.fillStyle=color;
+        ctx.fill();
+        if(isSelected){ ctx.lineWidth=2; ctx.strokeStyle='#ffffff'; ctx.stroke(); }
+      });
+    });
+  }
+
+  function initCanvasEvents(){
+    const canvas=document.getElementById('duel-canvas');
+    const start=e=>{ if(!canvasInteractable) return; const rect=canvas.getBoundingClientRect(); const p=e.touches?e.touches[0]:e; dragStartPt={x:p.clientX-rect.left,y:p.clientY-rect.top}; };
+    const end=e=>{ if(!canvasInteractable||!dragStartPt) return; const rect=canvas.getBoundingClientRect(); const p=e.changedTouches?e.changedTouches[0]:e; const endPt={x:p.clientX-rect.left,y:p.clientY-rect.top}; if(localMode){ localThrowPen(dragStartPt,endPt); } else { throwPen(dragStartPt,endPt); } dragStartPt=null; };
+    canvas.addEventListener('mousedown',start); canvas.addEventListener('mouseup',end);
+    canvas.addEventListener('touchstart',start); canvas.addEventListener('touchend',end);
+  }
+
+  async function throwPen(start,end){
+    if(selectedPenIndex===null){ toast('Select one of your pens first'); return; }
+    canvasInteractable=false;
+    const canvas=document.getElementById('duel-canvas');
+    const ref=db.collection('matches').doc(currentMatchId);
+    const snap=await ref.get();
+    const data=snap.data();
+    const uid=currentUser.id;
+    const players=data.players;
+    const penPos=players[uid].penPos[selectedPenIndex];
+    const mark=computeMarkFromPen(penPos, start, end, canvas, selectedPenIndex);
+    players[uid].penPos[selectedPenIndex]={x:mark.cx, y:mark.cy};
+    players[uid].marks=[...(players[uid].marks||[]), mark];
+    let cutSomeone=false;
+    Object.values(players).forEach(p=>{
+      if(p.uid===uid||p.eliminated) return;
+      const theirMarks=p.marks||[];
+      if(theirMarks.length===0) return;
+      const theirLatest=theirMarks[theirMarks.length-1];
+      if(segmentsIntersect(mark,theirLatest)){
+        if(!p.deadPens) p.deadPens=[false,false,false,false];
+        p.deadPens[theirLatest.penIndex]=true;
+        p.lives=4-p.deadPens.filter(Boolean).length;
+        if(p.lives===0) p.eliminated=true;
+        cutSomeone=true;
+      }
+    });
+    if(cutSomeone){
+      players[uid].score=(players[uid].score||0)+1;
+      players[uid].marks=[];
+      players[uid].penPos[selectedPenIndex]={...(players[uid].penPosStart ? players[uid].penPosStart[selectedPenIndex] : players[uid].penPos[selectedPenIndex])};
+    }
+    const turnOrder=data.turnOrder;
+    let next=(data.currentTurnIndex+1)%turnOrder.length, loops=0;
+    while(players[turnOrder[next]] && players[turnOrder[next]].eliminated && loops<turnOrder.length){ next=(next+1)%turnOrder.length; loops++; }
+    const remaining=Object.values(players).filter(p=>!p.eliminated);
+    let update={ players, currentTurnIndex:next };
+    if(remaining.length<=1){ update.status='finished'; update.winner=remaining.length===1?remaining[0].uid:null; }
+    await ref.update(update);
+  }
+
+  function segmentsIntersect(a,b){
+    function ccw(ax,ay,bx,by,cx,cy){ return (cy-ay)*(bx-ax) > (by-ay)*(cx-ax); }
+    return (ccw(a.x1,a.y1,b.x1,b.y1,b.x2,b.y2) !== ccw(a.x2,a.y2,b.x1,b.y1,b.x2,b.y2)) &&
+           (ccw(a.x1,a.y1,a.x2,a.y2,b.x1,b.y1) !== ccw(a.x1,a.y1,a.x2,a.y2,b.x2,b.y2));
+  }
+
+  let recordedMatches={};
+  async function maybeRecordResult(data){
+    if(recordedMatches[currentMatchId]) return;
+    recordedMatches[currentMatchId]=true;
+    const uid=currentUser.id;
+    const won=data.winner===uid;
+    const field=won?'wins':'losses';
+    try{ await db.collection('users').doc(uid).update({ [field]: firebase.firestore.FieldValue.increment(1) }); }catch(e){}
+    refreshCrownDisplay();
+  }
+
+  function exitMatch(){
+    if(currentMatchUnsub){ currentMatchUnsub(); currentMatchUnsub=null; }
+    currentMatchId=null;
+    localMode=false;
+    localMatchState=null;
+    clearInterval(countdownInterval);
+    showScreen('main');
+  }
+
+  async function adminKick(targetUid){
+    const ref=db.collection('matches').doc(currentMatchId);
+    const snap=await ref.get(); const data=snap.data();
+    data.players[targetUid].eliminated=true; data.players[targetUid].kicked=true;
+    const remaining=Object.values(data.players).filter(p=>!p.eliminated);
+    let update={players:data.players};
+    if(remaining.length<=1){ update.status='finished'; update.winner=remaining[0]?remaining[0].uid:null; }
+    await ref.update(update);
+    toast('Player kicked');
+  }
+  async function adminBan(targetUid, targetEmail){
+    await db.collection('bans').add({ email:targetEmail, bannedUntil: Date.now()+5*60*1000 });
+    await adminKick(targetUid);
+    toast('Player temp-banned for 5 min');
+  }
+  async function adminKillLives(targetUid, amount){
+    const ref=db.collection('matches').doc(currentMatchId);
+    const snap=await ref.get(); const data=snap.data();
+    data.players[targetUid].lives=Math.max(0,data.players[targetUid].lives-amount);
+    if(data.players[targetUid].lives===0) data.players[targetUid].eliminated=true;
+    const remaining=Object.values(data.players).filter(p=>!p.eliminated);
+    let update={players:data.players};
+    if(remaining.length<=1){ update.status='finished'; update.winner=remaining[0]?remaining[0].uid:null; }
+    await ref.update(update);
+  }
+  async function adminForceWin(){
+    const ref=db.collection('matches').doc(currentMatchId);
+    await ref.update({status:'finished', winner:currentUser.id});
+  }
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    await checkExistingLogin();
+    await loadSiteConfig();
+    initCanvasEvents();
+    const wrap=document.getElementById('logoTextWrap');
+    const text=document.getElementById('logoText');
+    const pen=document.getElementById('writingPen');
+    const travel=text.offsetWidth-6;
+    pen.style.setProperty('--travel', travel+'px');
+    requestAnimationFrame(()=>{ wrap.classList.add('animate'); pen.classList.add('animate'); });
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script> if(window.emailjs){ try{ emailjs.init({ publicKey: 'Ij6NA4OZlji_4F0sU' }); }catch(e){} } </script>
+</body>
+</html>
