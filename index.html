@@ -233,6 +233,7 @@
           </div>
           <button class="auth-send-btn" id="login-send-btn" onclick="sendLoginCode()">Send Code</button>
         </div>
+        <div id="login-account-chooser" style="display:none; margin-bottom:14px;"></div>
         <div class="auth-field" id="login-code-field" style="display:none;">
           <label for="login-code">Code</label>
           <input id="login-code" type="text" maxlength="6" placeholder="6-digit code" autocomplete="off">
@@ -493,9 +494,11 @@
     logInUser(userDoc);
   }
 
-  let pendingLoginUser=null;
+  let pendingLoginUser=null, emailAccountChoices=null;
   async function sendLoginCode(){
     showLoginError('');
+    document.getElementById('login-account-chooser').style.display='none';
+    document.getElementById('login-account-chooser').innerHTML='';
     const username=document.getElementById('login-username').value.trim();
     const email=document.getElementById('login-email').value.trim().toLowerCase();
     if(!email){ showLoginError('Enter the email on your account.'); return; }
@@ -508,17 +511,38 @@
       userDoc=snap.docs[0].data(); userId=snap.docs[0].id;
       if(userDoc.email.toLowerCase()!==email){ showLoginError('That email does not match this username.'); btn.disabled=false; btn.textContent='Send Code'; return; }
     } else {
-      const snap=await db.collection('users').where('email','==',email).limit(1).get();
+      const snap=await db.collection('users').where('email','==',email).limit(5).get();
       if(snap.empty){ showLoginError('No account found with that email.'); btn.disabled=false; btn.textContent='Send Code'; return; }
+      if(snap.docs.length>1){
+        emailAccountChoices=snap.docs.map(d=>({ ...d.data(), id:d.id }));
+        const chooser=document.getElementById('login-account-chooser');
+        chooser.innerHTML='<div class="hint" style="margin-bottom:8px;">Multiple accounts use this email — which one?</div>'+
+          emailAccountChoices.map((u,i)=>'<button type="button" onclick="pickEmailAccount('+i+')" style="display:block;width:100%;padding:10px;margin-bottom:6px;border-radius:8px;border:1px solid #2c2c38;background:#16161c;color:#fff;font-weight:700;cursor:pointer;">'+u.name+'</button>').join('');
+        chooser.style.display='block';
+        btn.disabled=false; btn.textContent='Send Code';
+        return;
+      }
       userDoc=snap.docs[0].data(); userId=snap.docs[0].id;
     }
+    await sendCodeToAccount(userDoc, userId, email, btn);
+  }
+
+  async function pickEmailAccount(i){
+    const chosen=emailAccountChoices[i];
+    const email=document.getElementById('login-email').value.trim().toLowerCase();
+    const btn=document.getElementById('login-send-btn');
+    document.getElementById('login-account-chooser').style.display='none';
+    await sendCodeToAccount(chosen, chosen.id, email, btn);
+  }
+
+  async function sendCodeToAccount(userDoc, userId, email, btn){
     pendingLoginUser={ ...userDoc, id:userId };
     loginGeneratedCode=Math.floor(100000+Math.random()*900000).toString();
-    btn.textContent='Sending...';
+    btn.disabled=true; btn.textContent='Sending...';
     try{
       if(window.emailjs){ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { email, to_name:userDoc.name, code:loginGeneratedCode }); toast('Code sent to '+email); }
       else { toast('Demo mode — your code is '+loginGeneratedCode); }
-    }catch(err){ console.error(err); toast('Send failed — demo code: '+loginGeneratedCode); }
+    }catch(err){ console.error('Login code send failed:', err); toast('Send failed — demo code: '+loginGeneratedCode); }
     document.getElementById('login-code-field').style.display='block';
     document.getElementById('login-email-submit').style.display='block';
     document.getElementById('login-code').value='';
